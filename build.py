@@ -236,9 +236,20 @@ print(f"Location: {MERGED_16BIT_DIR}\n")
 # If no additional formats requested, we're done
 if not OUTPUT_FORMATS:
     print("✅ No additional formats requested (OUTPUT_FORMATS is empty)")
+
+    # Calculate actual sizes
+    from pathlib import Path
+    lora_size = sum(f.stat().st_size for f in Path(LORA_DIR).rglob('*') if f.is_file())
+    lora_size_mb = lora_size / (1024 * 1024)
+
+    merged_size = sum(f.stat().st_size for f in Path(MERGED_16BIT_DIR).rglob('*') if f.is_file())
+    merged_size_gb = merged_size / (1024 * 1024 * 1024)
+
     print(f"\n📊 Build complete! Available models:")
     print(f"   • LoRA adapters: {LORA_DIR}")
+    print(f"     Size: {lora_size_mb:.1f} MB")
     print(f"   • Merged 16-bit:  {MERGED_16BIT_DIR}")
+    print(f"     Size: {merged_size_gb:.2f} GB")
     print(f"   • Modelfile:      {os.path.join(MERGED_16BIT_DIR, 'Modelfile')}")
     exit(0)
 
@@ -417,9 +428,20 @@ print("="*60)
 print("✅ BUILD COMPLETE")
 print("="*60)
 print(f"\nOutput directory: {OUTPUT_DIR}\n")
+
+# Calculate actual sizes
+from pathlib import Path
+lora_size = sum(f.stat().st_size for f in Path(LORA_DIR).rglob('*') if f.is_file())
+lora_size_mb = lora_size / (1024 * 1024)
+
+merged_size = sum(f.stat().st_size for f in Path(MERGED_16BIT_DIR).rglob('*') if f.is_file())
+merged_size_gb = merged_size / (1024 * 1024 * 1024)
+
 print("Available models:")
 print(f"  ✓ lora:          {LORA_DIR}")
+print(f"                   Size: {lora_size_mb:.1f} MB")
 print(f"  ✓ merged_16bit:  {MERGED_16BIT_DIR}")
+print(f"                   Size: {merged_size_gb:.2f} GB")
 
 for output_format in other_formats:
     output_path = os.path.join(OUTPUT_DIR, output_format)

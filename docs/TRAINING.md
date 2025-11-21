@@ -58,7 +58,7 @@ After training completes, you'll see:
   Training Mode: 50 steps (early stop)
   Total Steps: 50
   Batch Size: 2 × 2 = 4 (effective)
-  Max Seq Length: 2048
+  Max Seq Length: 4096
   LoRA: r=16, alpha=32
 
 ⏱️  Performance:
@@ -69,7 +69,7 @@ After training completes, you'll see:
 💾 Output:
   LoRA Adapters: 141.2 MB
   Location: ./outputs/Qwen3-4B/lora
-  Merged 16-bit: 7.62 GB
+  Merged 16-bit: 7.62 GB (actual size shown by build.py)
   Location: ./outputs/Qwen3-4B/merged_16bit
 
 💡 Next Steps:
@@ -135,8 +135,8 @@ Target: 4-16 effective batch size
 ### NVIDIA GPU (12GB)
 
 ```bash
-LORA_BASE_MODEL=unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit
-MAX_SEQ_LENGTH=2048
+LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit
+MAX_SEQ_LENGTH=4096
 BATCH_SIZE=2
 LORA_RANK=64
 ```
@@ -144,8 +144,8 @@ LORA_RANK=64
 ### NVIDIA GPU (8GB)
 
 ```bash
-LORA_BASE_MODEL=unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit
-MAX_SEQ_LENGTH=1024        # Reduce
+LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit
+MAX_SEQ_LENGTH=2048        # Reduce from 4096
 BATCH_SIZE=1               # Reduce
 GRADIENT_ACCUMULATION_STEPS=8
 LORA_RANK=32               # Reduce
@@ -171,8 +171,8 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 ### Apple Silicon (M1/M2/M3)
 
 ```bash
-LORA_BASE_MODEL=unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit
-MAX_SEQ_LENGTH=2048
+LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit
+MAX_SEQ_LENGTH=4096
 BATCH_SIZE=1               # MPS has lower memory
 LORA_RANK=32
 ```
@@ -187,7 +187,7 @@ torch.cuda.OutOfMemoryError: CUDA out of memory
 ```
 
 **Solutions (try in order):**
-1. Reduce `MAX_SEQ_LENGTH` (2048 → 1024)
+1. Reduce `MAX_SEQ_LENGTH` (4096 → 1024 or 2048)
 2. Reduce `BATCH_SIZE` (2 → 1)
 3. Increase `GRADIENT_ACCUMULATION_STEPS` (maintain effective batch)
 4. Enable `USE_GRADIENT_CHECKPOINTING=true`

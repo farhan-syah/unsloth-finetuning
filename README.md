@@ -217,9 +217,9 @@ python build.py
 3. (Optional) Converts to GGUF for Ollama/llama.cpp
 
 **Output:**
-- `merged_16bit/` - Complete merged model (~5GB for 2B model)
+- `merged_16bit/` - Complete merged model (~3.4GB for 1.7B model)
 - `gguf/` - GGUF quantized versions (if `OUTPUT_FORMATS` set)
-  - `model.Q4_K_M.gguf` - 4-bit quantization (~1.5GB)
+  - `model.Q4_K_M.gguf` - 4-bit quantization (~1.0GB)
 
 ### 5. Use Your Model
 
@@ -311,7 +311,7 @@ The pipeline handles format detection and conversion automatically.
 1. **Quality over quantity:** 1,000 high-quality examples > 10,000 poor examples
 2. **Consistency:** Keep formatting consistent across all examples
 3. **Diversity:** Include varied examples covering your use case
-4. **Length:** Most examples should fit in MAX_SEQ_LENGTH (default: 2048 tokens)
+4. **Length:** Most examples should fit in MAX_SEQ_LENGTH (default: 4096 tokens)
 
 See [docs/TRAINING.md](docs/TRAINING.md) for detailed dataset guidance.
 
@@ -605,10 +605,10 @@ outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/  # Auto-generated: {model}-{dataset
 **Problem:** GPU runs out of VRAM during training
 
 **Solutions:**
-1. Reduce `MAX_SEQ_LENGTH` from 2048 to 1024 in `.env`
+1. Reduce `MAX_SEQ_LENGTH` from 4096 to 1024 or 2048 in `.env`
 2. Reduce `BATCH_SIZE` from 2 to 1
 3. Increase `GRADIENT_ACCUMULATION_STEPS` to maintain effective batch size
-4. Use a smaller model (e.g., 2B instead of 4B)
+4. Use a smaller model (e.g., 1.7B instead of 4B)
 
 ### "Model not found" Error
 

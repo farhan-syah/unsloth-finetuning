@@ -76,11 +76,16 @@ WARMUP_STEPS=5                  # Warmup steps
 ### Sequence Length
 
 ```bash
-MAX_SEQ_LENGTH=2048  # Maximum tokens per sample
+MAX_SEQ_LENGTH=4096  # Maximum tokens per sample
 ```
 
-Common values: 512, 1024, 2048, 4096, 8192
-- Higher = longer context but more VRAM needed
+Controls max tokens per training sample (not model's max context!).
+Modern models support 8k-32k+ context, but longer = quadratic VRAM usage.
+
+Common values and use cases:
+- **512-1024**: Short instructions, low VRAM
+- **2048-4096**: Standard conversations, balanced (recommended)
+- **8192+**: Long context, requires significant VRAM
 
 ### Optimization
 
@@ -125,12 +130,12 @@ Available formats:
 
 | Format | Description | Size (Qwen3-4B) | Use Case |
 |--------|-------------|-----------------|----------|
-| *(empty)* | LoRA + merged_16bit only | 7.7GB | Just training |
-| `merged_4bit` | 4-bit safetensors | 3.4GB | HuggingFace inference |
-| `gguf_q4_k_m` | Q4_K_M quantization | 2.4GB | **Ollama (recommended)** |
-| `gguf_q5_k_m` | Q5_K_M quantization | 3.0GB | Better quality |
-| `gguf_q8_0` | Q8_0 quantization | 4.0GB | High quality |
-| `gguf_f16` | F16 (no quantization) | 7.6GB | Full precision |
+| *(empty)* | LoRA + merged_16bit only | ~7.7GB | Just training |
+| `merged_4bit` | 4-bit safetensors | ~3.4GB | HuggingFace inference |
+| `gguf_q4_k_m` | Q4_K_M quantization | ~2.4GB | **Ollama (recommended)** |
+| `gguf_q5_k_m` | Q5_K_M quantization | ~3.0GB | Better quality |
+| `gguf_q8_0` | Q8_0 quantization | ~4.0GB | High quality |
+| `gguf_f16` | F16 (no quantization) | ~7.6GB | Full precision |
 
 **Multiple formats:**
 ```bash
@@ -253,7 +258,7 @@ OUTPUT_FORMATS=gguf_q4_k_m,gguf_q5_k_m,gguf_q8_0
 LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit  # Lightweight 1.7B model
 INFERENCE_BASE_MODEL=
 OUTPUT_MODEL_NAME=auto
-MAX_SEQ_LENGTH=1024              # Reduce from 2048
+MAX_SEQ_LENGTH=1024              # Reduce from 4096
 BATCH_SIZE=1                     # Reduce from 2
 GRADIENT_ACCUMULATION_STEPS=8    # Increase to maintain effective batch
 LORA_RANK=32                     # Reduce from 64
@@ -265,7 +270,7 @@ USE_GRADIENT_CHECKPOINTING=true
 ### Out of Memory (OOM)
 
 Try these in order:
-1. Reduce `MAX_SEQ_LENGTH` (2048 → 1024)
+1. Reduce `MAX_SEQ_LENGTH` (4096 → 1024 or 2048)
 2. Reduce `BATCH_SIZE` (2 → 1)
 3. Increase `GRADIENT_ACCUMULATION_STEPS` (maintain effective batch size)
 4. Enable `USE_GRADIENT_CHECKPOINTING=true`

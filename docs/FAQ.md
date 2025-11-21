@@ -85,7 +85,7 @@ See [Training Guide - Out of Memory](TRAINING.md#out-of-memory-oom).
 
 Quick fix:
 ```bash
-MAX_SEQ_LENGTH=1024  # Reduce from 2048
+MAX_SEQ_LENGTH=1024  # Reduce from 4096
 BATCH_SIZE=1         # Reduce from 2
 LORA_RANK=32         # Reduce from 64
 USE_GRADIENT_CHECKPOINTING=true
@@ -176,19 +176,19 @@ OUTPUT_FORMATS=merged_4bit,gguf_q4_k_m
 | Format | Size | Purpose |
 |--------|------|---------|
 | `lora/` | ~140MB | Adapters only, needs base model |
-| `merged_16bit/` | ~7.6GB | Full model, safetensors format (16-bit precision) |
-| `gguf/` | 2-4GB | Quantized for Ollama/llama.cpp |
+| `merged_16bit/` | Varies by model | Full model, safetensors (1.7B ~3.4GB, 4B ~7.6GB) |
+| `gguf/` | Varies by quant | Quantized for Ollama/llama.cpp |
 
-**Important:** `merged_16bit/` is saved in 16-bit precision format, but since we train on a 4-bit quantized base (`unsloth/Qwen3-4B-unsloth-bnb-4bit`), the model quality reflects 4-bit-trained weights. This is standard practice and produces excellent results while keeping VRAM requirements low during training.
+**Important:** `merged_16bit/` is saved in 16-bit precision format, but since we train on a 4-bit quantized base (e.g., `unsloth/Qwen3-1.7B-unsloth-bnb-4bit`), the model quality reflects 4-bit-trained weights. This is standard practice and produces excellent results while keeping VRAM requirements low during training.
 
 ### Q: Which GGUF quantization should I use?
 
-| Quant | Size | Quality | Use Case |
-|-------|------|---------|----------|
-| Q4_K_M | 2.4GB | Good | **Recommended** - best balance |
-| Q5_K_M | 3.0GB | Better | More quality, acceptable size |
-| Q8_0 | 4.0GB | Best | Maximum quality |
-| Q2_K | 1.5GB | Lower | Smallest size |
+| Quant | Size (4B model) | Quality | Use Case |
+|-------|-----------------|---------|----------|
+| Q4_K_M | ~2.4GB | Good | **Recommended** - best balance |
+| Q5_K_M | ~3.0GB | Better | More quality, acceptable size |
+| Q8_0 | ~4.0GB | Best | Maximum quality |
+| Q2_K | ~1.5GB | Lower | Smallest size |
 
 ### Q: Can I delete intermediate files?
 
