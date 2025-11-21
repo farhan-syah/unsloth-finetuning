@@ -29,7 +29,7 @@ def get_float_env(key, default):
     return float(os.getenv(key, str(default)))
 
 # Configuration from environment variables
-LORA_BASE_MODEL = os.getenv("LORA_BASE_MODEL", "unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit")
+LORA_BASE_MODEL = os.getenv("LORA_BASE_MODEL", "unsloth/Qwen3-1.7B-unsloth-bnb-4bit")
 OUTPUT_MODEL_NAME = os.getenv("OUTPUT_MODEL_NAME", "auto")
 MAX_SEQ_LENGTH = get_int_env("MAX_SEQ_LENGTH", 2048)
 LORA_RANK = get_int_env("LORA_RANK", 64)

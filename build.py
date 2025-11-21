@@ -22,7 +22,7 @@ def get_int_env(key, default):
     return int(os.getenv(key, str(default)))
 
 # Configuration
-LORA_BASE_MODEL = os.getenv("LORA_BASE_MODEL", "unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit")
+LORA_BASE_MODEL = os.getenv("LORA_BASE_MODEL", "unsloth/Qwen3-1.7B-unsloth-bnb-4bit")
 INFERENCE_BASE_MODEL = os.getenv("INFERENCE_BASE_MODEL", "")  # Optional - for true 16-bit quality
 OUTPUT_MODEL_NAME = os.getenv("OUTPUT_MODEL_NAME", "auto")
 MAX_SEQ_LENGTH = get_int_env("MAX_SEQ_LENGTH", 2048)

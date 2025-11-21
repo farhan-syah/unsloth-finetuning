@@ -13,11 +13,11 @@ vim .env  # Edit settings
 
 ```bash
 # Training base model (required)
-LORA_BASE_MODEL=unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit
+LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit
 
 # Optional: Different base for merging (for best quality)
 INFERENCE_BASE_MODEL=  # Empty = use LORA_BASE_MODEL
-# INFERENCE_BASE_MODEL=Qwen/Qwen2.5-VL-2B-Instruct  # 16-bit for best quality
+# INFERENCE_BASE_MODEL=Qwen/Qwen2.5-1.7B  # 16-bit for best quality
 
 # Output naming (optional)
 OUTPUT_MODEL_NAME=auto  # Auto-generates from model + dataset
@@ -28,6 +28,7 @@ Choose LORA_BASE_MODEL based on your VRAM:
 
 | Model | VRAM Required | GPU Examples |
 |-------|---------------|--------------|
+| Qwen3-1.7B | 4-6GB | GTX 1660, RTX 3050 |
 | Qwen3-VL-2B-Instruct | 6-8GB | GTX 1660, RTX 3050 |
 | Qwen3-4B | 12GB+ | RTX 3060, RTX 4060 Ti |
 | Qwen3-8B | 24GB+ | RTX 3090, RTX 4090 |
@@ -218,7 +219,7 @@ SEED=3407  # For reproducibility
 ### Quick Test (1-2 minutes)
 
 ```bash
-LORA_BASE_MODEL=unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit
+LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit
 INFERENCE_BASE_MODEL=
 OUTPUT_MODEL_NAME=auto
 DATASET_NAME=yahma/alpaca-cleaned
@@ -233,7 +234,7 @@ OUTPUT_FORMATS=gguf_q4_k_m
 ### Full Training (Production)
 
 ```bash
-LORA_BASE_MODEL=unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit
+LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit
 INFERENCE_BASE_MODEL=
 OUTPUT_MODEL_NAME=auto
 DATASET_NAME=yahma/alpaca-cleaned
@@ -249,7 +250,7 @@ OUTPUT_FORMATS=gguf_q4_k_m,gguf_q5_k_m,gguf_q8_0
 ### Memory-Constrained (6GB VRAM)
 
 ```bash
-LORA_BASE_MODEL=unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit  # Lightweight 2B model
+LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit  # Lightweight 1.7B model
 INFERENCE_BASE_MODEL=
 OUTPUT_MODEL_NAME=auto
 MAX_SEQ_LENGTH=1024              # Reduce from 2048
