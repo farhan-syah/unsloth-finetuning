@@ -73,6 +73,7 @@ logs/
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
+!colab_train.ipynb
 
 # System Files
 Thumbs.db
