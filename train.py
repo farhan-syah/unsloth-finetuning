@@ -8,6 +8,7 @@ Configure your dataset and model in .env file
 
 import torch
 import os
+import json
 from unsloth import FastLanguageModel, is_bfloat16_supported
 from datasets import load_dataset
 from trl import SFTTrainer
@@ -37,9 +38,7 @@ LORA_ALPHA = get_int_env("LORA_ALPHA", 128)
 DATASET_NAME = os.getenv("DATASET_NAME", "yahma/alpaca-cleaned")
 DATASET_MAX_SAMPLES = get_int_env("DATASET_MAX_SAMPLES", 0)  # 0 = use all
 MAX_STEPS = get_int_env("MAX_STEPS", 0)  # 0 = use epochs
-FORCE_PREPROCESS = get_bool_env("FORCE_PREPROCESS", False)
 FORCE_RETRAIN = get_bool_env("FORCE_RETRAIN", False)
-CHECK_SEQ_LENGTH = get_bool_env("CHECK_SEQ_LENGTH", False)  # Set true to filter out samples exceeding MAX_SEQ_LENGTH (slower)
 
 # Generate output model name
 dataset_short_name = DATASET_NAME.split("/")[-1].lower().replace("_", "-")
@@ -152,130 +151,43 @@ model = FastLanguageModel.get_peft_model(
     loftq_config=None,
 )
 
-# Load or preprocess dataset
+# Load preprocessed dataset
+# NOTE: Run 'python preprocess.py' first to preprocess your dataset
 preprocess_exists = os.path.exists(PREPROCESSED_DATASET_PATH)
+metadata_path = os.path.join(PREPROCESSED_DATASET_PATH, "preprocessing_metadata.json")
 
-if preprocess_exists and not FORCE_PREPROCESS:
-    print(f"\n📂 Loading preprocessed dataset from {PREPROCESSED_DATASET_PATH}")
-    from datasets import load_from_disk
-    dataset = load_from_disk(PREPROCESSED_DATASET_PATH)
-    print(f"✅ Loaded {len(dataset)} samples (already filtered by MAX_SEQ_LENGTH)")
-    print("   To reprocess, set FORCE_PREPROCESS=true in .env")
-elif preprocess_exists and FORCE_PREPROCESS:
-    print(f"\n⚠️  Preprocessed dataset exists but FORCE_PREPROCESS=true")
-    print(f"   Will reprocess: {PREPROCESSED_DATASET_PATH}")
-    import shutil
-    shutil.rmtree(PREPROCESSED_DATASET_PATH)
-    print("\n📚 Loading and preprocessing dataset...")
-    from datasets import get_dataset_split_names, concatenate_datasets
+if not preprocess_exists:
+    print("\n" + "="*60)
+    print("❌ ERROR: Preprocessed dataset not found!")
+    print("="*60)
+    print(f"\nExpected location: {PREPROCESSED_DATASET_PATH}")
+    print(f"\n🔧 REQUIRED: Run preprocessing first:")
+    print(f"   python preprocess.py")
+    print(f"\nThis will:")
+    print(f"   • Preprocess and analyze your dataset")
+    print(f"   • Provide smart configuration recommendations")
+    print(f"   • Save preprocessed data for training")
+    print(f"\nAfter preprocessing, run 'python train.py' again")
+    print("="*60 + "\n")
+    exit(1)
+
+print(f"\n📂 Loading preprocessed dataset from {PREPROCESSED_DATASET_PATH}")
+from datasets import load_from_disk
+dataset = load_from_disk(PREPROCESSED_DATASET_PATH)
+
+# Load and show metadata
+if os.path.exists(metadata_path):
+    with open(metadata_path, 'r') as f:
+        metadata = json.load(f)
+    print(f"✅ Loaded {len(dataset)} samples")
+    print(f"   Dataset: {metadata.get('dataset_name', DATASET_NAME)}")
+    print(f"   Max length: {metadata.get('max_length', 'unknown')} tokens")
+    print(f"   Avg length: {metadata.get('avg_length', 'unknown')} tokens")
+    if metadata.get('filtered_count', 0) > 0:
+        print(f"   Filtered out: {metadata['filtered_count']} samples (exceeded MAX_SEQ_LENGTH)")
 else:
-    print("\n📚 Loading and preprocessing dataset...")
-    from datasets import get_dataset_split_names, concatenate_datasets
-
-if not preprocess_exists or FORCE_PREPROCESS:
-    # Only do preprocessing if needed
-    splits = get_dataset_split_names(DATASET_NAME)
-    print(f"Found {len(splits)} splits")
-
-    all_datasets = []
-    for split_name in splits:
-        split_data = load_dataset(DATASET_NAME, split=split_name)
-        all_datasets.append(split_data)
-
-    dataset = concatenate_datasets(all_datasets)
-    print(f"Total samples: {len(dataset)}")
-
-    def convert_to_text(example):
-        try:
-            prompt_input = example.get("prompt_input", "") or ""
-            user_input = example.get("input", "") or ""
-            output = example.get("output", "") or ""
-
-            if not user_input or not output:
-                return {"text": ""}
-
-            if prompt_input and prompt_input.strip():
-                full_input = f"{prompt_input}\n{user_input}"
-            else:
-                full_input = user_input
-
-            messages = [
-                {"role": "user", "content": full_input},
-                {"role": "assistant", "content": output}
-            ]
-
-            text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=False
-            )
-
-            return {"text": text}
-        except:
-            return {"text": ""}
-
-    print("Applying chat template...")
-    dataset = dataset.map(convert_to_text, num_proc=4, desc="Formatting")
-
-    print("Filtering invalid samples...")
-    original_size = len(dataset)
-    dataset = dataset.filter(lambda x: len(x["text"]) > 0)
-    print(f"✅ Kept {len(dataset)}/{original_size} valid samples")
-
-    # Filter samples by sequence length DURING preprocessing (OPTIONAL)
-    if CHECK_SEQ_LENGTH:
-        print(f"\n📏 Checking sequence lengths (max: {MAX_SEQ_LENGTH})...")
-        print(f"   (This may take a while for large datasets - set CHECK_SEQ_LENGTH=false to skip)")
-
-        def check_length(example):
-            """Check if sample fits within MAX_SEQ_LENGTH"""
-            text = example.get("text", "")
-            if not text:
-                return {"length": 0, "text": text}
-
-            # Tokenize to get actual length
-            tokens = tokenizer(text, truncation=False, add_special_tokens=True)
-            length = len(tokens["input_ids"])
-
-            return {"length": length, "text": text}
-
-        # Add length field to dataset (parallel processing for speed)
-        dataset = dataset.map(check_length, num_proc=4, desc="Checking lengths")
-
-        # Show length statistics
-        lengths = dataset["length"]
-        total_samples = len(dataset)
-        too_long = sum(1 for l in lengths if l > MAX_SEQ_LENGTH)
-        max_length = max(lengths) if lengths else 0
-        avg_length = sum(lengths) / len(lengths) if lengths else 0
-
-        print(f"  Total samples: {total_samples}")
-        print(f"  Max length in dataset: {max_length} tokens")
-        print(f"  Average length: {avg_length:.0f} tokens")
-        print(f"  Samples > {MAX_SEQ_LENGTH}: {too_long} ({too_long/total_samples*100:.1f}%)")
-
-        # Filter out samples that are too long
-        if too_long > 0:
-            print(f"\n⚠️  Filtering out {too_long} samples exceeding MAX_SEQ_LENGTH={MAX_SEQ_LENGTH}")
-            dataset = dataset.filter(lambda x: x["length"] <= MAX_SEQ_LENGTH, desc="Filtering by length")
-            print(f"✅ Kept {len(dataset)}/{total_samples} samples")
-
-            if too_long > total_samples * 0.1:  # If >10% filtered
-                print(f"\n💡 TIP: {too_long} samples ({too_long/total_samples*100:.1f}%) were skipped.")
-                print(f"   To include them, increase MAX_SEQ_LENGTH to at least {max_length}")
-
-        # Remove the length field (not needed for training)
-        dataset = dataset.remove_columns(["length"])
-    else:
-        print(f"\n⚡ Skipping sequence length checking (CHECK_SEQ_LENGTH=false)")
-        print(f"   Trainer will handle truncation automatically at MAX_SEQ_LENGTH={MAX_SEQ_LENGTH}")
-        print(f"\n   ℹ️  If training fails with length/token errors:")
-        print(f"   • Set CHECK_SEQ_LENGTH=true to filter out long samples")
-        print(f"   • Or increase MAX_SEQ_LENGTH in .env")
-
-    print(f"\n💾 Saving to {PREPROCESSED_DATASET_PATH}")
-    dataset.save_to_disk(PREPROCESSED_DATASET_PATH)
-    print("✅ Saved for future use")
+    print(f"✅ Loaded {len(dataset)} samples")
+    print(f"   ⚠️  No metadata found - run 'python preprocess.py' to regenerate with stats")
 
 # Limit dataset for testing if requested
 if DATASET_MAX_SAMPLES > 0 and len(dataset) > DATASET_MAX_SAMPLES:
@@ -427,12 +339,12 @@ with open(metrics_path, "w") as f:
 
 print(f"\n✅ All models saved!")
 
-# Generate proper README files with actual configuration
+# Generate proper README files with actual configuration from .env
 print(f"\n📝 Generating README documentation...")
 try:
     import subprocess
     result = subprocess.run(
-        ["python", "generate_readme.py"],
+        ["python", "generate_readme_train.py"],
         capture_output=True,
         text=True,
         timeout=10

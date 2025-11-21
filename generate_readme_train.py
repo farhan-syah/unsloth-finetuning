@@ -1,6 +1,9 @@
 """
-Generate proper README.md files for model outputs
-Uses actual configuration from .env to create accurate documentation
+Generate proper README.md files for model outputs after TRAINING
+Uses actual configuration from .env that was used during training
+
+This script is called by train.py after training completes.
+It reads from .env to ensure READMEs match the actual training configuration.
 """
 
 import os

@@ -459,19 +459,24 @@ if gguf_formats:
         print(f"  ✗ gguf:          failed")
 
 # Generate/update README files for all built formats
+# Uses generate_readme_build.py which reads from training_metrics.json
+# This ensures READMEs always reflect actual training parameters
 print("\n📝 Generating README documentation for built formats...")
+print("   (Reading training configuration from training_metrics.json)")
 try:
     import subprocess
     result = subprocess.run(
-        ["python", "generate_readme.py"],
+        ["python", "generate_readme_build.py"],
         capture_output=True,
         text=True,
         timeout=10
     )
     if result.returncode == 0:
-        print(f"✅ README files updated")
+        print(f"✅ README files generated")
     else:
         print(f"⚠️  README generation failed (non-critical)")
+        if result.stderr:
+            print(f"   Error: {result.stderr}")
 except Exception as e:
     print(f"⚠️  Could not generate READMEs (non-critical): {e}")
 
