@@ -17,7 +17,7 @@ LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit
 
 # Optional: Different base for merging (for best quality)
 INFERENCE_BASE_MODEL=  # Empty = use LORA_BASE_MODEL
-# INFERENCE_BASE_MODEL=Qwen/Qwen2.5-1.7B  # 16-bit for best quality
+# INFERENCE_BASE_MODEL=unsloth/Qwen3-1.7B  # 16-bit for best quality
 
 # Output naming (optional)
 OUTPUT_MODEL_NAME=auto  # Auto-generates from model + dataset
