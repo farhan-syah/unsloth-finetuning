@@ -459,9 +459,21 @@ files.download('model.zip')
 
 **Recommendation:**
 - **Starting out?** Use Colab Free
+- **Limited local VRAM?** Train in Colab, convert GGUF locally (GGUF is CPU-only)
 - **Serious about fine-tuning?** Get Colab Pro ($10/month is cheaper than buying a GPU)
 - **Privacy sensitive?** Use local setup
 - **No internet?** Use local setup
+
+### Hybrid Workflow (Best for Limited VRAM)
+
+If your local GPU has limited VRAM but you want GGUF models:
+
+1. **Train in Colab** - Use powerful T4/A100 GPUs
+2. **Merge in Colab** - Create merged safetensors model
+3. **Download to Google Drive** - Save the merged model
+4. **Convert to GGUF locally** - CPU-only conversion (no GPU needed)
+
+This workflow lets you use Colab's powerful GPUs for training while doing GGUF conversion on your local machine without needing GPU VRAM.
 
 ## 🎯 Advanced Usage
 

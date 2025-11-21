@@ -33,7 +33,12 @@ BATCH_SIZE = get_int_env("BATCH_SIZE", 2)
 GRADIENT_ACCUMULATION_STEPS = get_int_env("GRADIENT_ACCUMULATION_STEPS", 4)
 LEARNING_RATE = get_float_env("LEARNING_RATE", 2e-4)
 NUM_TRAIN_EPOCHS = get_int_env("NUM_TRAIN_EPOCHS", 1)
+MAX_STEPS = get_int_env("MAX_STEPS", 0)
 PACKING = get_bool_env("PACKING", False)
+
+# HuggingFace configuration (for cross-linking repos)
+HF_USERNAME = os.getenv("HF_USERNAME", "")
+HF_MODEL_NAME = os.getenv("HF_MODEL_NAME", "auto")
 
 # Parse model and dataset names
 dataset_short_name = DATASET_NAME.split("/")[-1].lower().replace("_", "-")
@@ -45,6 +50,28 @@ if OUTPUT_MODEL_NAME == "auto" or not OUTPUT_MODEL_NAME:
     output_model_name = f"{model_base}-{dataset_short_name}"
 else:
     output_model_name = OUTPUT_MODEL_NAME
+
+# Generate HuggingFace repo names (for cross-linking)
+if HF_MODEL_NAME == "auto" or not HF_MODEL_NAME:
+    hf_model_name = output_model_name
+else:
+    hf_model_name = HF_MODEL_NAME
+
+# HuggingFace repository links (if username is provided)
+if HF_USERNAME:
+    HF_LORA_REPO = f"{HF_USERNAME}/{hf_model_name}-lora"
+    HF_MERGED_REPO = f"{HF_USERNAME}/{hf_model_name}"
+    HF_GGUF_REPO = f"{HF_USERNAME}/{hf_model_name}-gguf"
+    HF_LORA_URL = f"https://huggingface.co/{HF_LORA_REPO}"
+    HF_MERGED_URL = f"https://huggingface.co/{HF_MERGED_REPO}"
+    HF_GGUF_URL = f"https://huggingface.co/{HF_GGUF_REPO}"
+else:
+    HF_LORA_REPO = None
+    HF_MERGED_REPO = None
+    HF_GGUF_REPO = None
+    HF_LORA_URL = None
+    HF_MERGED_URL = None
+    HF_GGUF_URL = None
 
 # Output paths
 OUTPUT_DIR_BASE = os.getenv("OUTPUT_DIR_BASE", "./outputs")
@@ -186,6 +213,11 @@ inputs = tokenizer.apply_chat_template(messages, tokenize=True, return_tensors="
 outputs = model.generate(input_ids=inputs, max_new_tokens=256)
 print(tokenizer.decode(outputs[0], skip_special_tokens=True))
 ```
+
+## Related Models
+
+{f'- **Merged Model**: [{HF_MERGED_REPO}]({HF_MERGED_URL}) - Ready-to-use merged model' if HF_MERGED_URL else '- **Merged Model**: See `../merged_16bit/` directory'}
+{f'- **GGUF Quantized**: [{HF_GGUF_REPO}]({HF_GGUF_URL}) - GGUF format for llama.cpp/Ollama' if HF_GGUF_URL else ''}
 
 ## Dataset
 
@@ -442,6 +474,11 @@ license: apache-2.0
 - **Dataset**: [{DATASET_NAME}](https://huggingface.co/datasets/{DATASET_NAME})
 - **Size**: {size_info}
 - **Usage**: {usage_lib}
+
+## Related Models
+
+{f'- **LoRA Adapters**: [{HF_LORA_REPO}]({HF_LORA_URL}) - Smaller LoRA-only adapters' if HF_LORA_URL else '- **LoRA Adapters**: See `../lora/` directory'}
+{f'- **GGUF Quantized**: [{HF_GGUF_REPO}]({HF_GGUF_URL}) - GGUF format for llama.cpp/Ollama' if HF_GGUF_URL and format_name == 'merged_16bit' else ''}
 
 ## Training Details
 
