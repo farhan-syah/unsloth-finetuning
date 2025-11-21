@@ -1,0 +1,80 @@
+# Unsloth Fine-tuning Requirements
+# IMPORTANT: Installation order matters to avoid Flash Attention and dependency conflicts
+
+# =============================================================================
+# INSTALLATION INSTRUCTIONS
+# =============================================================================
+# Recommended: Use the installation script
+#   bash install_dependencies.sh
+#
+# This uses Python 3.12 and latest compatible versions
+# =============================================================================
+
+# Step 1: Core ML frameworks and dependencies (install FIRST)
+# Using latest compatible versions for Python 3.12
+trl>=0.12.0
+peft>=0.13.0
+bitsandbytes>=0.45.0
+transformers[sentencepiece]>=4.46.0
+
+# Step 2: PyTorch (install SECOND)
+# PyTorch 2.8 for Flash Attention compatibility
+# (Script will auto-upgrade to 2.9 if Flash Attention fails)
+torch==2.8.0
+torchvision
+
+# Step 3: Unsloth (install THIRD)
+# Latest version from main branch
+unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git
+
+# Step 4: xformers (install FOURTH)
+# v0.0.32.x - has pre-built wheels for PyTorch 2.8.0
+# Must match PyTorch CUDA version using the same index URL
+# Available versions: 0.0.32.post1, 0.0.32.post2
+# Command: pip install "xformers>=0.0.32,<0.0.33" --index-url https://download.pytorch.org/whl/cu128
+xformers>=0.0.32,<0.0.33
+
+# Step 5: Flash Attention 2 (install LAST)
+# Flash Attention - OPTIONAL but recommended for:
+#   - Large models (64GB+) on cloud GPUs - Essential for VRAM efficiency
+#   - Long training runs - 10-20% faster training speed
+#   - Production deployments - Better resource utilization
+# Fallback: xformers works fine for small models (<8B)
+# Note: Unsloth may show version warning with 2.8.3+, but it works fine
+flash-attn
+
+# Additional dependencies
+datasets>=3.4.1
+huggingface_hub>=0.34.0
+accelerate>=0.25.0
+sentencepiece>=0.2.0
+protobuf
+python-dotenv>=1.0.0
+
+# Optional: Weights & Biases for tracking
+# wandb>=0.16.0
+
+# =============================================================================
+# PYTHON VERSION
+# =============================================================================
+# Recommended: Python 3.12
+# These versions are tested with the latest packages
+#
+# If using older Python (3.10, 3.11), you may need older package versions
+# =============================================================================
+
+# =============================================================================
+# TROUBLESHOOTING
+# =============================================================================
+# If you get "model type not recognized":
+# - Your transformers version is too old
+# - Run: bash install_dependencies.sh (uses latest versions)
+#
+# If you get "Flash Attention 2 installation seems to be broken":
+# - Run: bash install_dependencies.sh
+# - Training will work with xformers fallback
+#
+# If you get "ImportError: cannot import name 'shard_checkpoint'":
+# - Run: pip uninstall -y autoawq autoawq_kernels
+# - Then reinstall: pip install --force-reinstall peft
+# =============================================================================

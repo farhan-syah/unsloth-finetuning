@@ -1,0 +1,100 @@
+# Environment & Secrets
+.env
+.env.local
+*.env.local
+!.env.example
+!.env.test
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment (all types)
+venv/
+env/
+ENV/
+.venv/
+.python-version  
+.tool-versions   
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.claude/
+
+# Training Outputs
+outputs/
+checkpoints/
+checkpoint-*/
+
+# Weights & Biases
+wandb/
+runs/
+
+# Data & Preprocessed
+data/
+!data/.gitkeep
+cache/
+.cache/
+*.arrow
+*.jsonl
+*.parquet
+
+# Model Files
+*.safetensors
+*.bin
+*.gguf
+*.pth
+*.pt
+
+# Unsloth Specific
+unsloth_compiled_cache/
+_unsloth_temporary_saved_buffers/
+
+# llama.cpp (built locally)
+llama.cpp/
+!llama.cpp/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# System Files
+Thumbs.db
+
+# Backup & Temporary
+*.bak
+*.backup
+*~
+tmp/
+temp/
+*.tmp
+
+# Research & Experiments
+research/
+experiments/
+
+# Distribution
+*.tar.gz
+*.zip
+
+# Documentation Build
+docs/_build/
+site/
+
+
