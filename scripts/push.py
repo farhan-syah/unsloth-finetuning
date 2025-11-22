@@ -124,6 +124,102 @@ def push_to_hub(local_dir, repo_id, folder_name, force=False):
         print(f"   ❌ Upload failed: {e}")
         return False
 
+def push_gguf_to_hub(local_dir, repo_id, folder_name, force=False):
+    """
+    Push GGUF directory to HuggingFace Hub with one-by-one file upload.
+
+    GGUF files are very large (800MB - 2.5GB each). Uploading them all at once
+    can cause timeouts and connection issues. This function uploads each file
+    individually to avoid these problems.
+    """
+    from huggingface_hub import HfApi, create_repo
+
+    # Check if directory exists
+    if not os.path.exists(local_dir):
+        print(f"❌ Directory not found: {local_dir}")
+        return False
+
+    # Get GGUF files
+    gguf_files = sorted(Path(local_dir).glob("*.gguf"))
+    other_files = [f for f in Path(local_dir).iterdir() if f.is_file() and not f.name.endswith('.gguf')]
+
+    if not gguf_files:
+        print(f"❌ No GGUF files found in: {local_dir}")
+        return False
+
+    # Calculate total size
+    total_size = sum(f.stat().st_size for f in gguf_files) + sum(f.stat().st_size for f in other_files)
+    total_size_gb = total_size / (1024**3)
+
+    print(f"\n📦 {folder_name}")
+    print(f"   Local: {local_dir}")
+    print(f"   GGUF files: {len(gguf_files)}")
+    print(f"   Other files: {len(other_files)} (Modelfile, README, etc.)")
+    print(f"   Total size: {total_size_gb:.2f} GB")
+    print(f"   Repository: {repo_id}")
+
+    # Show GGUF files
+    print(f"\n   GGUF quantizations:")
+    for f in gguf_files:
+        size_mb = f.stat().st_size / (1024**2)
+        print(f"      • {f.name} ({size_mb:.0f} MB)")
+
+    if not force:
+        response = input(f"\n⚠️  Push to {repo_id}? [y/N]: ").strip().lower()
+        if response != 'y':
+            print("   ⏭️  Skipped")
+            return False
+
+    try:
+        api = HfApi()
+
+        # Create repository
+        print(f"\n📤 Creating repository...")
+        create_repo(repo_id=repo_id, repo_type="model", exist_ok=True, private=False)
+        print(f"   ✅ Repository created/verified")
+
+        # Upload non-GGUF files first (small files)
+        if other_files:
+            print(f"\n📤 Uploading {len(other_files)} small file(s) (Modelfile, README, etc.)...")
+            for file_path in other_files:
+                api.upload_file(
+                    path_or_fileobj=str(file_path),
+                    path_in_repo=file_path.name,
+                    repo_id=repo_id,
+                    repo_type="model",
+                    commit_message=f"Upload {file_path.name}"
+                )
+            print(f"   ✅ Small files uploaded")
+
+        # Upload GGUF files one by one
+        print(f"\n📤 Uploading GGUF files one by one (prevents timeouts)...")
+        print(f"   This may take a while for large files...")
+
+        for i, gguf_file in enumerate(gguf_files, 1):
+            size_mb = gguf_file.stat().st_size / (1024**2)
+            print(f"\n   [{i}/{len(gguf_files)}] Uploading {gguf_file.name} ({size_mb:.0f} MB)...")
+
+            try:
+                api.upload_file(
+                    path_or_fileobj=str(gguf_file),
+                    path_in_repo=gguf_file.name,
+                    repo_id=repo_id,
+                    repo_type="model",
+                    commit_message=f"Upload {gguf_file.name}"
+                )
+                print(f"        ✅ {gguf_file.name} uploaded successfully")
+            except Exception as e:
+                print(f"        ❌ Failed to upload {gguf_file.name}: {e}")
+                print(f"        Continuing with remaining files...")
+
+        print(f"\n   ✅ All GGUF files processed!")
+        print(f"   🔗 https://huggingface.co/{repo_id}")
+        return True
+
+    except Exception as e:
+        print(f"   ❌ Upload failed: {e}")
+        return False
+
 def find_model_directories():
     """Find all model output directories"""
     models = []
@@ -308,12 +404,12 @@ def main():
         if push_to_hub(merged_dir, merged_repo, "Merged model", args.force):
             success_count += 1
 
-    # Push GGUF
+    # Push GGUF (use specialized function for one-by-one upload)
     if push_gguf and selected_model['has_gguf']:
         total_count += 1
         gguf_dir = os.path.join(selected_model['path'], "gguf")
         gguf_repo = f"{HF_USERNAME}/{model_name}-GGUF"
-        if push_to_hub(gguf_dir, gguf_repo, "GGUF models", args.force):
+        if push_gguf_to_hub(gguf_dir, gguf_repo, "GGUF models", args.force):
             success_count += 1
 
     # Summary
