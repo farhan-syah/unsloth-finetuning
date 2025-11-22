@@ -341,6 +341,18 @@ with open(metrics_path, "w") as f:
 
 print(f"\n✅ All models saved!")
 
+# Clean up LoRA directory - remove redundant files
+print(f"\n🧹 Cleaning up LoRA directory...")
+try:
+    from cleanup_utils import cleanup_lora_directory
+    removed_count, removed_size = cleanup_lora_directory(LORA_DIR, verbose=True)
+    if removed_count > 0:
+        print(f"✅ Cleaned up {removed_count} redundant file(s) ({removed_size / (1024 * 1024):.1f} MB)")
+    else:
+        print(f"✅ LoRA directory already clean")
+except Exception as e:
+    print(f"⚠️  Could not clean up LoRA directory: {e}")
+
 # Generate proper README files with actual configuration from .env
 print(f"\n📝 Generating README documentation...")
 try:

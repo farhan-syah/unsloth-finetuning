@@ -289,6 +289,11 @@ print("✅ Merged 16-bit model ready!")
 print("="*60)
 print(f"Location: {MERGED_16BIT_DIR}\n")
 
+# Clean up merged directory immediately after creation
+print("🧹 Cleaning up merged model directory...")
+from cleanup_utils import cleanup_merged_directory
+cleanup_merged_directory(MERGED_16BIT_DIR, verbose=True)
+
 # If no additional formats requested, we're done
 if not OUTPUT_FORMATS:
     print("✅ No additional formats requested (OUTPUT_FORMATS is empty)")
@@ -572,6 +577,12 @@ if gguf_formats:
         print("✅ F16 file removed to save space")
         print()
 
+    # Clean up GGUF directory immediately after creation
+    print("🧹 Cleaning up GGUF directory...")
+    from cleanup_utils import cleanup_gguf_directory
+    cleanup_gguf_directory(gguf_dir, verbose=True)
+    print()
+
 print("="*60)
 print("✅ BUILD COMPLETE")
 print("="*60)
@@ -627,75 +638,5 @@ try:
             print(f"   Error: {result.stderr}")
 except Exception as e:
     print(f"⚠️  Could not generate READMEs (non-critical): {e}")
-
-# Cleanup: Remove unnecessary files from output directories
-print("\n🧹 Cleaning up unnecessary files...")
-
-def cleanup_directory(directory, keep_patterns, description):
-    """Remove files not matching keep patterns"""
-    if not os.path.exists(directory):
-        return 0
-
-    removed_count = 0
-    removed_size = 0
-
-    for item in Path(directory).iterdir():
-        if item.is_file():
-            # Check if file matches any keep pattern
-            should_keep = any(item.match(pattern) for pattern in keep_patterns)
-
-            if not should_keep:
-                file_size = item.stat().st_size
-                item.unlink()
-                removed_count += 1
-                removed_size += file_size
-        elif item.is_dir() and item.name in ["unsloth_compiled_cache", "__pycache__"]:
-            # Remove cache directories
-            shutil.rmtree(item)
-            removed_count += 1
-
-    if removed_count > 0:
-        size_mb = removed_size / (1024 * 1024)
-        print(f"   {description}: Removed {removed_count} item(s) ({size_mb:.1f} MB)")
-
-    return removed_count
-
-# LoRA directory - keep only essential files
-lora_keep = [
-    "adapter_config.json",          # LoRA adapter configuration
-    "adapter_model.safetensors",    # LoRA weights
-    "training_metrics.json",        # Training stats (steps, epochs, loss, time)
-    "trainer_state.json",           # Trainer state (fallback for README generation)
-    "README.md",
-    "*.md"  # Keep any markdown files
-]
-cleanup_directory(LORA_DIR, lora_keep, "LoRA")
-
-# Merged directory - keep only model and essential files
-merged_dir = os.path.join(OUTPUT_DIR, "merged_16bit")
-merged_keep = [
-    "model.safetensors",
-    "config.json",
-    "generation_config.json",
-    "tokenizer.json",
-    "tokenizer_config.json",
-    "special_tokens_map.json",
-    "Modelfile",
-    "README.md",
-    "*.md"
-]
-cleanup_directory(merged_dir, merged_keep, "Merged")
-
-# GGUF directory - keep only GGUF files (self-contained, no tokenizer needed)
-gguf_dir = os.path.join(OUTPUT_DIR, "gguf")
-gguf_keep = [
-    "*.gguf",
-    "Modelfile",
-    "README.md",
-    "*.md"
-]
-cleanup_directory(gguf_dir, gguf_keep, "GGUF")
-
-print("✅ Cleanup complete!")
 
 print("="*60 + "\n")
