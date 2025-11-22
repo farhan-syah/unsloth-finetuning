@@ -6,6 +6,7 @@ Requires LoRA adapters from train.py first!
 """
 
 import os
+import json
 import shutil
 from pathlib import Path
 from dotenv import load_dotenv
@@ -116,7 +117,7 @@ if gguf_formats:
 if INFERENCE_BASE_MODEL:
     merge_base_model = INFERENCE_BASE_MODEL
     print(f"\n🔧 Using INFERENCE_BASE_MODEL for merging: {merge_base_model}")
-    print(f"   (16-bit base for best quality - requires more VRAM)")
+    print(f"   (16-bit base for best quality)")
 else:
     merge_base_model = LORA_BASE_MODEL
     print(f"\n🔧 Using LORA_BASE_MODEL for merging: {merge_base_model}")
@@ -217,10 +218,14 @@ else:
         model_location=MERGED_16BIT_DIR
     )
 
+    # Track template info for README generation
+    template_key = None
+    template_display_name = None
+
     if modelfile_content:
         # Get template name for display
-        template_name = MODEL_TO_OLLAMA_TEMPLATE_MAPPER.get(LORA_BASE_MODEL, "unknown")
-        print(f"   Detected template: {template_name} (from Unsloth)")
+        template_key = MODEL_TO_OLLAMA_TEMPLATE_MAPPER.get(LORA_BASE_MODEL, "unknown")
+        print(f"   Detected template: {template_key} (from Unsloth)")
     else:
         # Fallback: Use template mapper to get template from model name
         print(f"   No direct mapping found in create_ollama_modelfile, checking mapper...")
@@ -273,6 +278,38 @@ else:
         print(f"✅ Modelfile created: {modelfile_path}")
         print(f"\n💡 IMPORTANT: Review the Modelfile before using with Ollama!")
         print(f"   Verify the chat template matches your training dataset format")
+
+        # Save chat template info for README generation
+        if template_key:
+            try:
+                from unsloth.chat_templates import CHAT_TEMPLATES
+                if template_key in CHAT_TEMPLATES:
+                    template_tuple = CHAT_TEMPLATES[template_key]
+                    # Extract template from Ollama format
+                    if len(template_tuple) >= 4 and template_tuple[3]:
+                        ollama_template = template_tuple[3]
+                        # Extract TEMPLATE content
+                        template_start = ollama_template.find('TEMPLATE """')
+                        if template_start != -1:
+                            template_start += len('TEMPLATE """')
+                            template_end = ollama_template.find('"""', template_start)
+                            if template_end != -1:
+                                template_format = ollama_template[template_start:template_end].strip()
+
+                                # Save to JSON for README generator
+                                chat_template_info = {
+                                    "template_key": template_key,
+                                    "template_name": template_key.replace("-", " ").replace("_", " ").title(),
+                                    "template_format": template_format,
+                                    "model_name": LORA_BASE_MODEL
+                                }
+
+                                chat_template_json_path = os.path.join(MERGED_16BIT_DIR, "chat_template.json")
+                                with open(chat_template_json_path, "w") as f:
+                                    json.dump(chat_template_info, f, indent=2)
+                                print(f"   ✅ Saved chat template info: {chat_template_json_path}")
+            except Exception as e:
+                print(f"   ⚠️  Could not save chat template info: {e}")
     else:
         print(f"⚠️  Could not create Modelfile automatically")
         print(f"   You may need to create a custom Modelfile manually")
@@ -399,7 +436,7 @@ if gguf_formats:
     # Step 2: Convert to F16 GGUF (only once, reused for all quants)
     import subprocess
 
-    f16_gguf = os.path.join(gguf_dir, "model.F16.gguf")
+    f16_gguf = os.path.join(gguf_dir, f"{output_model_name}-F16.gguf")
 
     # Check if F16 already exists
     if os.path.exists(f16_gguf) and not FORCE_REBUILD:
@@ -425,7 +462,7 @@ if gguf_formats:
     quantized_files = []
 
     for quant_method in quant_methods:
-        quant_gguf = os.path.join(gguf_dir, f"model.{quant_method}.gguf")
+        quant_gguf = os.path.join(gguf_dir, f"{output_model_name}-{quant_method}.gguf")
 
         # Skip if already exists
         if os.path.exists(quant_gguf) and not FORCE_REBUILD:

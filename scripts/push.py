@@ -178,6 +178,28 @@ def push_gguf_to_hub(local_dir, repo_id, folder_name, force=False):
         create_repo(repo_id=repo_id, repo_type="model", exist_ok=True, private=False)
         print(f"   ✅ Repository created/verified")
 
+        # Delete old model.*.gguf files (legacy naming convention)
+        print(f"\n🧹 Checking for old model.*.gguf files to delete...")
+        try:
+            repo_files = api.list_repo_files(repo_id=repo_id, repo_type="model")
+            old_gguf_files = [f for f in repo_files if f.startswith("model.") and f.endswith(".gguf")]
+
+            if old_gguf_files:
+                print(f"   Found {len(old_gguf_files)} old file(s) to delete:")
+                for old_file in old_gguf_files:
+                    print(f"      • {old_file}")
+                    api.delete_file(
+                        path_in_repo=old_file,
+                        repo_id=repo_id,
+                        repo_type="model",
+                        commit_message=f"Delete legacy file {old_file}"
+                    )
+                print(f"   ✅ Deleted {len(old_gguf_files)} old file(s)")
+            else:
+                print(f"   ✅ No old files to delete")
+        except Exception as e:
+            print(f"   ⚠️  Could not check/delete old files: {e}")
+
         # Upload non-GGUF files first (small files)
         if other_files:
             print(f"\n📤 Uploading {len(other_files)} small file(s) (Modelfile, README, etc.)...")

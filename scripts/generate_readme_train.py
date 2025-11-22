@@ -38,6 +38,7 @@ GRADIENT_ACCUMULATION_STEPS = get_int_env("GRADIENT_ACCUMULATION_STEPS", 4)
 LEARNING_RATE = get_float_env("LEARNING_RATE", 2e-4)
 NUM_TRAIN_EPOCHS = get_int_env("NUM_TRAIN_EPOCHS", 1)
 MAX_STEPS = get_int_env("MAX_STEPS", 0)
+DATASET_MAX_SAMPLES = get_int_env("DATASET_MAX_SAMPLES", 0)
 PACKING = get_bool_env("PACKING", False)
 
 # HuggingFace configuration (for cross-linking repos)
@@ -47,6 +48,35 @@ HF_MODEL_NAME = os.getenv("HF_MODEL_NAME", "auto")
 # Parse model and dataset names
 dataset_short_name = DATASET_NAME.split("/")[-1].lower().replace("_", "-")
 dataset_author = DATASET_NAME.split("/")[0] if "/" in DATASET_NAME else "Unknown"
+
+# Helper function to get training scope description
+def get_training_scope():
+    """
+    Calculate and display actual samples used during training.
+    Shows "Samples Used: X/Total" format based on .env configuration.
+    """
+    # For generate_readme_train.py, we read from .env (not training_metrics.json)
+    # So we need to estimate based on configuration
+
+    # Calculate samples that will be used
+    if MAX_STEPS > 0:
+        # Limited by steps: samples_used = steps × effective_batch_size
+        effective_batch = BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS
+        samples_used = MAX_STEPS * effective_batch
+    else:
+        # Full epochs
+        if DATASET_MAX_SAMPLES > 0:
+            # Limited by DATASET_MAX_SAMPLES
+            samples_used = DATASET_MAX_SAMPLES * NUM_TRAIN_EPOCHS
+        else:
+            # Full dataset - we don't know total yet, use placeholder
+            return f"{NUM_TRAIN_EPOCHS} epoch(s), full dataset"
+
+    # Show the configuration
+    if DATASET_MAX_SAMPLES > 0:
+        return f"~{samples_used:,} samples ({NUM_TRAIN_EPOCHS} epoch(s), limited to {DATASET_MAX_SAMPLES:,} samples)"
+    else:
+        return f"~{samples_used:,} samples ({NUM_TRAIN_EPOCHS} epoch(s), {MAX_STEPS} steps)"
 
 # Generate output model name (same logic as train.py/build.py)
 if OUTPUT_MODEL_NAME == "auto" or not OUTPUT_MODEL_NAME:
@@ -176,7 +206,7 @@ Fine-tuned LoRA adapters for [{LORA_BASE_MODEL}](https://huggingface.co/{LORA_BA
 - **Training Time**: {training_time}
 - **Training Steps**: {"~" + str(total_steps) if total_steps != "Unknown" else "Unknown"}
 - **Dataset Samples**: {samples_trained if samples_trained != "Unknown" else "See dataset"}
-- **Training Mode**: {"Quick test" if MAX_STEPS > 0 and MAX_STEPS < 500 else "Full training"}
+- **Training Scope**: {get_training_scope()}
 
 ## Usage
 
@@ -402,7 +432,7 @@ ollama run {output_model_name.lower()} "Hello!"
 - **Training Time**: {training_time}
 - **Training Loss**: {final_loss}
 - **Max Seq Length**: {MAX_SEQ_LENGTH}
-- **Training Mode**: {"Quick test (limited steps/samples)" if MAX_STEPS > 0 and MAX_STEPS < 500 else "Full training"}
+- **Training Scope**: {get_training_scope()}
 
 For complete training configuration, see the LoRA directory.
 
@@ -499,7 +529,7 @@ license: apache-2.0
 - **Training Time**: {training_time}
 - **Training Loss**: {final_loss}
 - **Max Seq Length**: {MAX_SEQ_LENGTH}
-- **Training Mode**: {"Quick test" if MAX_STEPS > 0 and MAX_STEPS < 500 else "Full training"}
+- **Training Scope**: {get_training_scope()}
 
 For complete training configuration, see the LoRA adapters repository/directory.
 

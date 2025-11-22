@@ -322,6 +322,7 @@ metrics = {
     "model_name": LORA_BASE_MODEL,
     "dataset_name": DATASET_NAME,
     "dataset_samples": dataset_samples,
+    "dataset_max_samples": DATASET_MAX_SAMPLES,
     "total_steps": total_steps,
     "lora_rank": LORA_RANK,
     "lora_alpha": LORA_ALPHA,
@@ -450,7 +451,7 @@ print(f"    • merged_16bit/ (merged model + Modelfile)")
 INFERENCE_BASE_MODEL = os.getenv("INFERENCE_BASE_MODEL", "")
 if INFERENCE_BASE_MODEL:
     print(f"      Using INFERENCE_BASE_MODEL: {INFERENCE_BASE_MODEL}")
-    print(f"      Quality: 16-bit (requires 15-30GB VRAM during build)")
+    print(f"      Quality: 16-bit (best quality)")
 else:
     print(f"      Using LORA_BASE_MODEL: {LORA_BASE_MODEL}")
     print(f"      Quality: Same as training (4-bit)")

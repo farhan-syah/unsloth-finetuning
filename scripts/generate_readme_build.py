@@ -16,6 +16,28 @@ from dotenv import load_dotenv
 # Load .env for HuggingFace links and author name (non-training config)
 load_dotenv(override=True)
 
+# Try to load transformers for chat template extraction
+try:
+    from transformers import AutoTokenizer
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    print("⚠️  transformers not available - chat template will not be included")
+
+# Try to load Unsloth's template mapper (same as build.py)
+try:
+    from unsloth.models.mapper import MODEL_TO_OLLAMA_TEMPLATE_MAPPER
+    UNSLOTH_MAPPER_AVAILABLE = True
+except ImportError:
+    UNSLOTH_MAPPER_AVAILABLE = False
+    MODEL_TO_OLLAMA_TEMPLATE_MAPPER = {}
+
+def get_template_for_model(model_name):
+    """Get Ollama template name for a given model using Unsloth's mapper."""
+    if model_name in MODEL_TO_OLLAMA_TEMPLATE_MAPPER:
+        return MODEL_TO_OLLAMA_TEMPLATE_MAPPER[model_name]
+    return None
+
 # Helper functions
 def get_bool_env(key, default=False):
     val = os.getenv(key, str(default)).lower()
@@ -71,6 +93,7 @@ GRADIENT_ACCUMULATION_STEPS = metrics_data.get("gradient_accumulation_steps", 4)
 LEARNING_RATE = metrics_data.get("learning_rate", 0.0002)
 NUM_TRAIN_EPOCHS = metrics_data.get("num_train_epochs", 1)
 MAX_STEPS = metrics_data.get("max_steps", 0)
+DATASET_MAX_SAMPLES = metrics_data.get("dataset_max_samples", 0)
 PACKING = metrics_data.get("packing", False)
 
 # Extract training results
@@ -86,9 +109,60 @@ print(f"   Max seq length: {MAX_SEQ_LENGTH}")
 print(f"   LoRA rank: {LORA_RANK}")
 print(f"   Training steps: {total_steps}")
 
+# Load chat template - will be populated after finding LoRA directory
+chat_template_name = None
+chat_template_format = None
+
+# Load chat template from chat_template.json (created by build.py)
+chat_template_json_path = os.path.join(OUTPUT_DIR, "merged_16bit", "chat_template.json")
+if os.path.exists(chat_template_json_path):
+    try:
+        print(f"\n📝 Loading chat template from {chat_template_json_path}...")
+        with open(chat_template_json_path) as f:
+            chat_template_info = json.load(f)
+            chat_template_name = chat_template_info.get("template_name")
+            chat_template_format = chat_template_info.get("template_format")
+            if chat_template_name and chat_template_format:
+                print(f"✅ Chat template loaded: {chat_template_name}")
+    except Exception as e:
+        print(f"⚠️  Could not load chat template: {e}")
+
 # Parse model and dataset names
 dataset_short_name = DATASET_NAME.split("/")[-1].lower().replace("_", "-")
 dataset_author = DATASET_NAME.split("/")[0] if "/" in DATASET_NAME else "Unknown"
+
+# Helper function to get training scope description
+def get_training_scope():
+    """
+    Calculate and display actual samples used during training.
+    Shows "Samples Used: X/Total" format.
+    """
+    # Calculate actual samples used
+    if MAX_STEPS > 0:
+        # Limited by steps: samples_used = steps × effective_batch_size
+        effective_batch = BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS
+        samples_used = MAX_STEPS * effective_batch
+    else:
+        # Full epochs
+        if DATASET_MAX_SAMPLES > 0:
+            # Limited by DATASET_MAX_SAMPLES
+            samples_used = DATASET_MAX_SAMPLES * NUM_TRAIN_EPOCHS
+        else:
+            # Full dataset
+            samples_used = samples_trained if samples_trained != "Unknown" else "Unknown"
+
+    # Get total available
+    total_samples = samples_trained if samples_trained != "Unknown" else "Unknown"
+
+    # Format output
+    if samples_used == "Unknown" or total_samples == "Unknown":
+        return f"{NUM_TRAIN_EPOCHS} epoch(s)"
+
+    # Show as fraction if limited, otherwise show full
+    if samples_used < total_samples:
+        return f"{samples_used:,}/{total_samples:,} samples ({NUM_TRAIN_EPOCHS} epoch(s))"
+    else:
+        return f"{total_samples:,} samples ({NUM_TRAIN_EPOCHS} epoch(s), full dataset)"
 
 # Generate HuggingFace repo names (for cross-linking)
 if HF_MODEL_NAME == "auto" or not HF_MODEL_NAME:
@@ -140,7 +214,27 @@ Fine-tuned LoRA adapters for [{LORA_BASE_MODEL}](https://huggingface.co/{LORA_BA
 - **Dataset**: [{DATASET_NAME}](https://huggingface.co/datasets/{DATASET_NAME})
 - **Training Framework**: Unsloth + TRL + Transformers
 - **Adapter Type**: PEFT LoRA adapters only (requires base model)
+"""
 
+# Add chat template for LoRA README if available
+if chat_template_format:
+    lora_readme += f"""
+## Prompt Format
+
+This model uses the **{chat_template_name}** chat template.
+
+Use the tokenizer's `apply_chat_template()` method:
+
+```python
+messages = [
+    {{"role": "system", "content": "You are a helpful assistant."}},
+    {{"role": "user", "content": "Your question here"}}
+]
+inputs = tokenizer.apply_chat_template(messages, tokenize=True, return_tensors="pt")
+```
+"""
+
+lora_readme += f"""
 ## Training Configuration
 
 ### LoRA Parameters
@@ -165,7 +259,7 @@ Fine-tuned LoRA adapters for [{LORA_BASE_MODEL}](https://huggingface.co/{LORA_BA
 - **Training Loss**: {final_loss}
 - **Training Steps**: {total_steps if total_steps != "Unknown" else "Unknown"}
 - **Dataset Samples**: {samples_trained if samples_trained != "Unknown" else "See dataset"}
-- **Training Mode**: {"Quick test" if MAX_STEPS > 0 and MAX_STEPS < 500 else "Full training"}
+- **Training Scope**: {get_training_scope()}
 
 ## Usage
 
@@ -391,7 +485,7 @@ ollama run {output_model_name.lower()} "Hello!"
 - **Training Steps**: {total_steps if total_steps != "Unknown" else "Unknown"}
 - **Training Loss**: {final_loss}
 - **Max Seq Length**: {MAX_SEQ_LENGTH}
-- **Training Mode**: {"Quick test (limited steps/samples)" if MAX_STEPS > 0 and MAX_STEPS < 500 else "Full training"}
+- **Training Scope**: {get_training_scope()}
 
 For complete training configuration, see the LoRA directory.
 
@@ -444,12 +538,23 @@ def generate_format_readme(format_name, format_path):
         usage_lib = "transformers with bitsandbytes"
     elif "gguf" == format_name:
         description = f"GGUF format quantizations for llama.cpp/Ollama."
-        size_info = "Varies by quantization (2-8GB per file)"
+        # Calculate actual size range from GGUF files (will be updated below if files exist)
+        size_info = "Varies by quantization"
         usage_lib = "llama.cpp / Ollama"
     else:
         description = "Model format"
         size_info = "Unknown"
         usage_lib = "Unknown"
+
+    # For GGUF, calculate actual size range from files
+    if "gguf" == format_name and os.path.exists(format_path):
+        gguf_sizes = []
+        for f in Path(format_path).glob("*.gguf"):
+            gguf_sizes.append(f.stat().st_size / (1024 * 1024 * 1024))  # Size in GB
+        if gguf_sizes:
+            min_size = min(gguf_sizes)
+            max_size = max(gguf_sizes)
+            size_info = f"{min_size:.2f} GB - {max_size:.2f} GB"
 
     readme = f"""---
 base_model: {LORA_BASE_MODEL}
@@ -481,6 +586,44 @@ license: apache-2.0
 {f'- **LoRA Adapters**: [{HF_LORA_REPO}]({HF_LORA_URL}) - Smaller LoRA-only adapters' if HF_LORA_URL else '- **LoRA Adapters**: Available locally in the output directory'}
 {f'- **Merged FP16 Model**: [{HF_MERGED_REPO}]({HF_MERGED_URL}) - Original unquantized model in FP16' if HF_MERGED_URL and format_name == 'gguf' else ''}
 {f'- **GGUF Quantized**: [{HF_GGUF_REPO}]({HF_GGUF_URL}) - GGUF format for llama.cpp/Ollama' if HF_GGUF_URL and format_name == 'merged_16bit' else ''}
+"""
+
+    # Add chat template section based on format type
+    if chat_template_format:
+        if format_name == "gguf":
+            # GGUF: Show Ollama template format
+            readme += f"""
+## Prompt Format
+
+This model uses the **{chat_template_name}** chat template.
+
+### Ollama Template Format
+
+```
+{chat_template_format}
+```
+"""
+        else:
+            # Merged models: Show Python usage
+            readme += f"""
+## Prompt Format
+
+This model uses the **{chat_template_name}** chat template.
+
+### Python Usage
+
+Use the tokenizer's `apply_chat_template()` method:
+
+```python
+messages = [
+    {{"role": "system", "content": "You are a helpful assistant."}},
+    {{"role": "user", "content": "Your question here"}}
+]
+inputs = tokenizer.apply_chat_template(messages, tokenize=True, return_tensors="pt")
+```
+"""
+
+    readme += f"""
 
 ## Training Details
 
@@ -488,16 +631,16 @@ license: apache-2.0
 - **Training Steps**: {total_steps if total_steps != "Unknown" else "Unknown"}
 - **Training Loss**: {final_loss}
 - **Max Seq Length**: {MAX_SEQ_LENGTH}
-- **Training Mode**: {"Quick test" if MAX_STEPS > 0 and MAX_STEPS < 500 else "Full training"}
+- **Training Scope**: {get_training_scope()}
 
 For complete training configuration, see the LoRA adapters repository/directory.
-
-## Usage
 
 """
 
     if "merged" in format_name:
-        readme += f"""### With Transformers
+        readme += f"""## Usage
+
+### With Transformers
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -523,8 +666,9 @@ print(tokenizer.decode(outputs[0]))
             for f in sorted(Path(gguf_dir_path).glob("*.gguf")):
                 file_size = f.stat().st_size / (1024 * 1024 * 1024)  # Size in GB
                 file_name = f.name
-                # Extract quantization type from filename (e.g., model.Q4_K_M.gguf -> Q4_K_M)
-                quant_type = file_name.replace("model.", "").replace(".gguf", "")
+                # Extract quantization type from filename (e.g., Llama-3.2-1B-Instruct-bnb-4bit-lima-Q4_K_M.gguf -> Q4_K_M)
+                # Format: {output_model_name}-{quant_type}.gguf
+                quant_type = file_name.replace(".gguf", "").split("-")[-1]
 
                 # Describe quantization quality
                 if "Q2" in quant_type:
@@ -547,72 +691,22 @@ print(tokenizer.decode(outputs[0]))
                 gguf_files.append((file_name, quant_type, file_size, quality))
 
         if gguf_files:
-            readme += f"""### Available Quantizations
+            readme += f"""## Available Quantizations
 
 | Quantization | File | Size | Quality |
 |--------------|------|------|---------|
 """
             for file_name, quant_type, file_size, quality in gguf_files:
-                readme += f"| **{quant_type}** | `{file_name}` | {file_size:.2f} GB | {quality} |\n"
+                readme += f"| **{quant_type}** | [{file_name}]({file_name}) | {file_size:.2f} GB | {quality} |\n"
 
-            # Use first available file as example
-            example_file = gguf_files[0][0]
-            example_quant = gguf_files[0][1]
             readme += f"""
-### With Ollama
-
-```bash
-# Create Modelfile with proper chat template (using {example_quant} as example)
-cat > Modelfile <<'EOF'
-FROM {format_path}/{example_file}
-
-TEMPLATE \"\"\"<|im_start|>system
-You are a helpful AI assistant.<|im_end|>
-<|im_start|>user
-{{{{ .Prompt }}}}<|im_end|>
-<|im_start|>assistant
-\"\"\"
-
-PARAMETER stop "<|im_start|>"
-PARAMETER stop "<|im_end|>"
-PARAMETER temperature 0.7
-PARAMETER top_p 0.9
-EOF
-
-# Create and run model
-ollama create {output_model_name.lower()} -f Modelfile
-ollama run {output_model_name.lower()} "What is machine learning?"
-```
-
-### With llama.cpp
-
-```bash
-# Run directly (using {example_quant} as example)
-llama-cli -m {format_path}/{example_file} -p "Hello!"
-```
+**Usage:** Use the dropdown menu above to select a quantization, then follow HuggingFace's provided instructions.
 """
         else:
             # No GGUF files found - shouldn't happen but handle gracefully
-            readme += f"""### Available Quantizations
+            readme += f"""## Available Quantizations
 
 No GGUF files found in this directory yet.
-
-### With Ollama
-
-```bash
-# Create Modelfile
-cat > Modelfile <<EOF
-FROM {format_path}/model.Q4_K_M.gguf
-PARAMETER temperature 0.7
-PARAMETER top_p 0.9
-EOF
-
-# Create model
-ollama create {output_model_name.lower()} -f Modelfile
-
-# Run
-ollama run {output_model_name.lower()} "Hello!"
-```
 """
 
     readme += f"""
@@ -621,15 +715,17 @@ ollama run {output_model_name.lower()} "Hello!"
 Based on {LORA_BASE_MODEL} and trained on {DATASET_NAME}.
 Please refer to the original model and dataset licenses.
 
-## Framework Versions
+## Credits
 
-- Unsloth: 2025.11.3
-- Transformers: 4.57.1
-- PyTorch: 2.9.0+cu128
+**Trained by:** {AUTHOR_NAME}
 
----
+**Training pipeline:**
+- [unsloth-finetuning](https://github.com/farhan-syah/unsloth-finetuning) by [@farhan-syah](https://github.com/farhan-syah)
+- [Unsloth](https://github.com/unslothai/unsloth) - 2x faster LLM fine-tuning
 
-Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+**Base components:**
+- Base model: [{LORA_BASE_MODEL}](https://huggingface.co/{LORA_BASE_MODEL})
+- Training dataset: [{DATASET_NAME}](https://huggingface.co/datasets/{DATASET_NAME}) by {dataset_author}
 """
 
     return readme

@@ -113,6 +113,7 @@ def cleanup_merged_directory(merged_dir, verbose=True):
         "tokenizer_config.json",
         "special_tokens_map.json",
         "Modelfile",                 # Ollama configuration
+        "chat_template.json",        # Chat template info for README generation
         "README.md",
         "*.md"
     ]
