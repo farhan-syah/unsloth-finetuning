@@ -1,14 +1,19 @@
 """
-Generate proper README.md files for model outputs
-Uses actual configuration from .env to create accurate documentation
+Generate proper README.md files for model outputs during BUILD
+Reads actual training configuration from training_metrics.json checkpoint
+
+This script is called by build.py when creating output formats.
+It reads from training_metrics.json (saved during training) to ensure
+READMEs reflect the actual training parameters, not local .env values.
 """
 
 import os
 import json
 from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Force reload .env to pick up any changes (e.g., HF_USERNAME added during upload)
+# Load .env for HuggingFace links and author name (non-training config)
 load_dotenv(override=True)
 
 # Helper functions
@@ -16,41 +21,74 @@ def get_bool_env(key, default=False):
     val = os.getenv(key, str(default)).lower()
     return val in ('true', '1', 'yes', 'on')
 
-def get_int_env(key, default):
-    return int(os.getenv(key, str(default)))
-
-def get_float_env(key, default):
-    return float(os.getenv(key, str(default)))
-
-# Load configuration
-LORA_BASE_MODEL = os.getenv("LORA_BASE_MODEL", "unsloth/Qwen3-1.7B-unsloth-bnb-4bit")
-OUTPUT_MODEL_NAME = os.getenv("OUTPUT_MODEL_NAME", "auto")
-AUTHOR_NAME = os.getenv("AUTHOR_NAME", "Your Name")
-MAX_SEQ_LENGTH = get_int_env("MAX_SEQ_LENGTH", 4096)
-LORA_RANK = get_int_env("LORA_RANK", 64)
-LORA_ALPHA = get_int_env("LORA_ALPHA", 128)
-DATASET_NAME = os.getenv("DATASET_NAME", "yahma/alpaca-cleaned")
-BATCH_SIZE = get_int_env("BATCH_SIZE", 2)
-GRADIENT_ACCUMULATION_STEPS = get_int_env("GRADIENT_ACCUMULATION_STEPS", 4)
-LEARNING_RATE = get_float_env("LEARNING_RATE", 2e-4)
-NUM_TRAIN_EPOCHS = get_int_env("NUM_TRAIN_EPOCHS", 1)
-MAX_STEPS = get_int_env("MAX_STEPS", 0)
-PACKING = get_bool_env("PACKING", False)
-
-# HuggingFace configuration (for cross-linking repos)
+# Load HuggingFace configuration from .env (for cross-linking repos)
 HF_USERNAME = os.getenv("HF_USERNAME", "")
 HF_MODEL_NAME = os.getenv("HF_MODEL_NAME", "auto")
+AUTHOR_NAME = os.getenv("AUTHOR_NAME", "Your Name")
+OUTPUT_DIR_BASE = os.getenv("OUTPUT_DIR_BASE", "./outputs")
+
+# First, find the LoRA directory
+# We need to detect which model was trained by looking at existing output directories
+lora_dirs = []
+if os.path.exists(OUTPUT_DIR_BASE):
+    for item in os.listdir(OUTPUT_DIR_BASE):
+        lora_path = os.path.join(OUTPUT_DIR_BASE, item, "lora")
+        if os.path.exists(lora_path):
+            lora_dirs.append((item, lora_path))
+
+if not lora_dirs:
+    print(f"❌ No LoRA directories found in {OUTPUT_DIR_BASE}")
+    print("   Run 'python scripts/train.py' first")
+    exit(1)
+
+# Use the most recently modified LoRA directory
+lora_dirs.sort(key=lambda x: os.path.getmtime(x[1]), reverse=True)
+output_model_name, LORA_DIR = lora_dirs[0]
+OUTPUT_DIR = os.path.join(OUTPUT_DIR_BASE, output_model_name)
+
+print(f"📂 Found model output: {output_model_name}")
+
+# Load training configuration from training_metrics.json
+metrics_path = os.path.join(LORA_DIR, "training_metrics.json")
+if not os.path.exists(metrics_path):
+    print(f"❌ training_metrics.json not found: {metrics_path}")
+    print("   This file should be created by train.py during training")
+    exit(1)
+
+print(f"📊 Loading training configuration from: {metrics_path}")
+
+with open(metrics_path) as f:
+    metrics_data = json.load(f)
+
+# Extract training configuration from metrics (these are the ACTUAL values used during training)
+LORA_BASE_MODEL = metrics_data.get("model_name", "unknown")
+DATASET_NAME = metrics_data.get("dataset_name", "unknown")
+MAX_SEQ_LENGTH = metrics_data.get("max_seq_length", 4096)
+LORA_RANK = metrics_data.get("lora_rank", 16)
+LORA_ALPHA = metrics_data.get("lora_alpha", 32)
+BATCH_SIZE = metrics_data.get("batch_size", 2)
+GRADIENT_ACCUMULATION_STEPS = metrics_data.get("gradient_accumulation_steps", 4)
+LEARNING_RATE = metrics_data.get("learning_rate", 0.0002)
+NUM_TRAIN_EPOCHS = metrics_data.get("num_train_epochs", 1)
+MAX_STEPS = metrics_data.get("max_steps", 0)
+PACKING = metrics_data.get("packing", False)
+
+# Extract training results
+training_time = f"{metrics_data.get('training_time_minutes', 0):.1f} minutes"
+final_loss = f"{metrics_data.get('final_loss', 0):.4f}"
+total_steps = metrics_data.get("total_steps", "Unknown")
+samples_trained = metrics_data.get("dataset_samples", "Unknown")
+
+print(f"✅ Loaded configuration:")
+print(f"   Base model: {LORA_BASE_MODEL}")
+print(f"   Dataset: {DATASET_NAME}")
+print(f"   Max seq length: {MAX_SEQ_LENGTH}")
+print(f"   LoRA rank: {LORA_RANK}")
+print(f"   Training steps: {total_steps}")
 
 # Parse model and dataset names
 dataset_short_name = DATASET_NAME.split("/")[-1].lower().replace("_", "-")
 dataset_author = DATASET_NAME.split("/")[0] if "/" in DATASET_NAME else "Unknown"
-
-# Generate output model name (same logic as train.py/build.py)
-if OUTPUT_MODEL_NAME == "auto" or not OUTPUT_MODEL_NAME:
-    model_base = LORA_BASE_MODEL.split("/")[-1].replace("-unsloth-bnb-4bit", "").replace("-unsloth", "")
-    output_model_name = f"{model_base}-{dataset_short_name}"
-else:
-    output_model_name = OUTPUT_MODEL_NAME
 
 # Generate HuggingFace repo names (for cross-linking)
 if HF_MODEL_NAME == "auto" or not HF_MODEL_NAME:
@@ -62,7 +100,7 @@ else:
 if HF_USERNAME:
     HF_LORA_REPO = f"{HF_USERNAME}/{hf_model_name}-lora"
     HF_MERGED_REPO = f"{HF_USERNAME}/{hf_model_name}"
-    HF_GGUF_REPO = f"{HF_USERNAME}/{hf_model_name}-gguf"
+    HF_GGUF_REPO = f"{HF_USERNAME}/{hf_model_name}-GGUF"
     HF_LORA_URL = f"https://huggingface.co/{HF_LORA_REPO}"
     HF_MERGED_URL = f"https://huggingface.co/{HF_MERGED_REPO}"
     HF_GGUF_URL = f"https://huggingface.co/{HF_GGUF_REPO}"
@@ -73,51 +111,6 @@ else:
     HF_LORA_URL = None
     HF_MERGED_URL = None
     HF_GGUF_URL = None
-
-# Output paths
-OUTPUT_DIR_BASE = os.getenv("OUTPUT_DIR_BASE", "./outputs")
-OUTPUT_DIR = os.path.join(OUTPUT_DIR_BASE, output_model_name)
-LORA_DIR = os.path.join(OUTPUT_DIR, "lora")
-
-# Check if training has been done
-if not os.path.exists(LORA_DIR):
-    print(f"❌ LoRA directory not found: {LORA_DIR}")
-    print("   Run 'python train.py' first")
-    exit(1)
-
-# Try to load training metrics from our custom metrics file
-metrics_path = os.path.join(LORA_DIR, "training_metrics.json")
-training_time = "Unknown"
-final_loss = "Unknown"
-total_steps = "Unknown"
-samples_trained = "Unknown"
-dataset_size_used = "Unknown"
-
-if os.path.exists(metrics_path):
-    with open(metrics_path) as f:
-        metrics_data = json.load(f)
-        if "training_time_minutes" in metrics_data:
-            training_time = f"{metrics_data['training_time_minutes']:.1f} minutes"
-        if "final_loss" in metrics_data and metrics_data["final_loss"] is not None:
-            final_loss = f"{metrics_data['final_loss']:.4f}"
-        if "samples_trained" in metrics_data:
-            samples_trained = metrics_data["samples_trained"]
-        if "dataset_size_used" in metrics_data:
-            dataset_size_used = metrics_data["dataset_size_used"]
-
-# Fallback to trainer_state.json if metrics file doesn't exist
-trainer_state_path = os.path.join(LORA_DIR, "trainer_state.json")
-if training_time == "Unknown" and os.path.exists(trainer_state_path):
-    with open(trainer_state_path) as f:
-        trainer_state = json.load(f)
-        if "log_history" in trainer_state and len(trainer_state["log_history"]) > 0:
-            # Get final loss from last log entry
-            for entry in reversed(trainer_state["log_history"]):
-                if "loss" in entry:
-                    final_loss = f"{entry['loss']:.4f}"
-                    break
-        if "max_steps" in trainer_state:
-            total_steps = trainer_state["max_steps"]
 
 # Generate LoRA adapter README
 lora_readme = f"""---
@@ -170,8 +163,7 @@ Fine-tuned LoRA adapters for [{LORA_BASE_MODEL}](https://huggingface.co/{LORA_BA
 
 ### Training Results
 - **Training Loss**: {final_loss}
-- **Training Time**: {training_time}
-- **Training Steps**: {"~" + str(total_steps) if total_steps != "Unknown" else "Unknown"}
+- **Training Steps**: {total_steps if total_steps != "Unknown" else "Unknown"}
 - **Dataset Samples**: {samples_trained if samples_trained != "Unknown" else "See dataset"}
 - **Training Mode**: {"Quick test" if MAX_STEPS > 0 and MAX_STEPS < 500 else "Full training"}
 
@@ -396,7 +388,7 @@ ollama run {output_model_name.lower()} "Hello!"
 - **Base Model**: {LORA_BASE_MODEL}
 - **Dataset**: {DATASET_NAME}
 - **LoRA Rank**: {LORA_RANK}
-- **Training Time**: {training_time}
+- **Training Steps**: {total_steps if total_steps != "Unknown" else "Unknown"}
 - **Training Loss**: {final_loss}
 - **Max Seq Length**: {MAX_SEQ_LENGTH}
 - **Training Mode**: {"Quick test (limited steps/samples)" if MAX_STEPS > 0 and MAX_STEPS < 500 else "Full training"}
@@ -412,7 +404,7 @@ To create other formats from LoRA adapters:
 OUTPUT_FORMATS=lora_only,merged_16bit,gguf_q4_k_m
 
 # Run build script
-python build.py
+python scripts/build.py
 ```
 
 Available formats:
@@ -493,7 +485,7 @@ license: apache-2.0
 ## Training Details
 
 - **LoRA Rank**: {LORA_RANK}
-- **Training Time**: {training_time}
+- **Training Steps**: {total_steps if total_steps != "Unknown" else "Unknown"}
 - **Training Loss**: {final_loss}
 - **Max Seq Length**: {MAX_SEQ_LENGTH}
 - **Training Mode**: {"Quick test" if MAX_STEPS > 0 and MAX_STEPS < 500 else "Full training"}
@@ -523,17 +515,92 @@ print(tokenizer.decode(outputs[0]))
 ```
 """
     elif "gguf" == format_name:
-        readme += f"""### Available Quantizations
+        # Detect available GGUF files and generate table
+        gguf_files = []
+        gguf_dir_path = format_path  # format_path already points to gguf directory
 
-This folder contains multiple GGUF quantizations. Choose based on your needs:
-- **Q4_K_M** (2.4GB): Best balance of quality and size (recommended)
-- **Q5_K_M** (3.0GB): Better quality, larger size
-- **Q8_0** (4.0GB): High quality, closer to original
+        if os.path.exists(gguf_dir_path):
+            for f in sorted(Path(gguf_dir_path).glob("*.gguf")):
+                file_size = f.stat().st_size / (1024 * 1024 * 1024)  # Size in GB
+                file_name = f.name
+                # Extract quantization type from filename (e.g., model.Q4_K_M.gguf -> Q4_K_M)
+                quant_type = file_name.replace("model.", "").replace(".gguf", "")
+
+                # Describe quantization quality
+                if "Q2" in quant_type:
+                    quality = "Smallest size, lower quality"
+                elif "Q3" in quant_type:
+                    quality = "Small size, moderate quality"
+                elif "Q4" in quant_type:
+                    quality = "Good balance (recommended)"
+                elif "Q5" in quant_type:
+                    quality = "Better quality, larger size"
+                elif "Q6" in quant_type:
+                    quality = "High quality"
+                elif "Q8" in quant_type:
+                    quality = "Very high quality, near original"
+                elif "F16" in quant_type or "f16" in quant_type:
+                    quality = "Full precision (largest)"
+                else:
+                    quality = "Unknown"
+
+                gguf_files.append((file_name, quant_type, file_size, quality))
+
+        if gguf_files:
+            readme += f"""### Available Quantizations
+
+| Quantization | File | Size | Quality |
+|--------------|------|------|---------|
+"""
+            for file_name, quant_type, file_size, quality in gguf_files:
+                readme += f"| **{quant_type}** | `{file_name}` | {file_size:.2f} GB | {quality} |\n"
+
+            # Use first available file as example
+            example_file = gguf_files[0][0]
+            example_quant = gguf_files[0][1]
+            readme += f"""
+### With Ollama
+
+```bash
+# Create Modelfile with proper chat template (using {example_quant} as example)
+cat > Modelfile <<'EOF'
+FROM {format_path}/{example_file}
+
+TEMPLATE \"\"\"<|im_start|>system
+You are a helpful AI assistant.<|im_end|>
+<|im_start|>user
+{{{{ .Prompt }}}}<|im_end|>
+<|im_start|>assistant
+\"\"\"
+
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+EOF
+
+# Create and run model
+ollama create {output_model_name.lower()} -f Modelfile
+ollama run {output_model_name.lower()} "What is machine learning?"
+```
+
+### With llama.cpp
+
+```bash
+# Run directly (using {example_quant} as example)
+llama-cli -m {format_path}/{example_file} -p "Hello!"
+```
+"""
+        else:
+            # No GGUF files found - shouldn't happen but handle gracefully
+            readme += f"""### Available Quantizations
+
+No GGUF files found in this directory yet.
 
 ### With Ollama
 
 ```bash
-# Create Modelfile (using Q4_K_M as example)
+# Create Modelfile
 cat > Modelfile <<EOF
 FROM {format_path}/model.Q4_K_M.gguf
 PARAMETER temperature 0.7
@@ -545,13 +612,6 @@ ollama create {output_model_name.lower()} -f Modelfile
 
 # Run
 ollama run {output_model_name.lower()} "Hello!"
-```
-
-### With llama.cpp
-
-```bash
-# Run directly (using Q4_K_M as example)
-llama-cli -m {format_path}/model.Q4_K_M.gguf -p "Hello!"
 ```
 """
 
@@ -575,7 +635,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
     return readme
 
 # Write README files
-print("📝 Generating README files...")
+print("\n📝 Generating README files...")
 
 lora_readme_path = os.path.join(LORA_DIR, "README.md")
 with open(lora_readme_path, "w") as f:

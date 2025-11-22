@@ -7,12 +7,12 @@ Tips, best practices, and troubleshooting for fine-tuning with Unsloth.
 ```bash
 # Test training (2 minutes)
 cp .env.test .env
-python train.py
+python scripts/train.py
 
 # Full training
 cp .env.example .env
 # Edit .env (set MAX_STEPS=0, DATASET_MAX_SAMPLES=0)
-python train.py
+python scripts/train.py
 ```
 
 ## Understanding the Workflow
@@ -38,7 +38,7 @@ The first time you run `train.py`:
 
 ### Step 3: Building (Optional)
 
-Run `python build.py` to convert merged_16bit to other formats.
+Run `python scripts/build.py` to convert merged_16bit to other formats.
 
 ## Training Output
 
@@ -73,7 +73,7 @@ After training completes, you'll see:
   Location: ./outputs/Qwen3-4B/merged_16bit
 
 💡 Next Steps:
-  Run: python build.py
+  Run: python scripts/build.py
   Will create: gguf_q4_k_m,gguf_q5_k_m
 ============================================================
 ```
@@ -85,7 +85,7 @@ After training completes, you'll see:
 Use `.env.test` for quick validation:
 ```bash
 cp .env.test .env
-python train.py  # ~2 minutes
+python scripts/train.py  # ~2 minutes
 ```
 
 Verify:
@@ -206,7 +206,7 @@ CHECK_SEQ_LENGTH=true
 FORCE_PREPROCESS=true
 ```
 
-Run `python train.py` - it will filter out samples exceeding `MAX_SEQ_LENGTH`.
+Run `python scripts/train.py` - it will filter out samples exceeding `MAX_SEQ_LENGTH`.
 
 Or increase `MAX_SEQ_LENGTH` (requires more VRAM).
 

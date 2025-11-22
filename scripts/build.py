@@ -12,8 +12,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from unsloth import FastLanguageModel
+from unsloth.save import create_ollama_modelfile
+from unsloth.ollama_template_mappers import MODEL_TO_OLLAMA_TEMPLATE_MAPPER
 
 # Helper functions
+def get_template_for_model(model_name):
+    """
+    Get Ollama template name for a given model using Unsloth's mapper.
+    Returns template name (e.g., "llama-3.1", "qwen2.5") or None if not found.
+    """
+    # Check direct mapping first
+    if model_name in MODEL_TO_OLLAMA_TEMPLATE_MAPPER:
+        return MODEL_TO_OLLAMA_TEMPLATE_MAPPER[model_name]
+    return None
+
 def get_bool_env(key, default=False):
     val = os.getenv(key, str(default)).lower()
     return val in ('true', '1', 'yes', 'on')
@@ -31,7 +43,7 @@ OUTPUT_FORMATS = [fmt.strip() for fmt in OUTPUT_FORMATS if fmt.strip()]
 FORCE_REBUILD = get_bool_env("FORCE_REBUILD", False)
 
 PUSH_TO_HUB = get_bool_env("PUSH_TO_HUB", False)
-HF_USERNAME = os.getenv("HF_USERNAME", "your_username")
+HF_USERNAME = os.getenv("HF_USERNAME", "")
 HF_MODEL_NAME = os.getenv("HF_MODEL_NAME", "auto")
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 
@@ -64,7 +76,7 @@ print("\n📋 Checking build requirements...")
 # Check if LoRA adapters exist (required)
 if not os.path.exists(LORA_DIR):
     print(f"\n❌ ERROR: LoRA adapters not found at: {LORA_DIR}")
-    print("   Run 'python train.py' first to create LoRA adapters")
+    print("   Run 'python scripts/train.py' first to create LoRA adapters")
     exit(1)
 print(f"✅ LoRA adapters found: {LORA_DIR}")
 
@@ -188,38 +200,82 @@ else:
     # Save merged model
     print(f"\n💾 Saving merged 16-bit model to: {MERGED_16BIT_DIR}")
     os.makedirs(MERGED_16BIT_DIR, exist_ok=True)
-    model.save_pretrained(MERGED_16BIT_DIR)
-    tokenizer.save_pretrained(MERGED_16BIT_DIR)
+    # Save with token=False to use local cache only
+    model.save_pretrained(MERGED_16BIT_DIR, token=False)
+    tokenizer.save_pretrained(MERGED_16BIT_DIR, token=False)
     print(f"✅ Merged model saved!")
 
     # Create Modelfile for Ollama
     modelfile_path = os.path.join(MERGED_16BIT_DIR, "Modelfile")
+
     print(f"\n📝 Creating Modelfile: {modelfile_path}")
-    with open(modelfile_path, "w") as f:
-        f.write(f"""# Modelfile for Ollama
-# This is a template - adjust parameters as needed
 
-FROM {MERGED_16BIT_DIR}
+    # Try Unsloth's create_ollama_modelfile function first
+    modelfile_content = create_ollama_modelfile(
+        tokenizer=tokenizer,
+        base_model_name=LORA_BASE_MODEL,
+        model_location=MERGED_16BIT_DIR
+    )
 
-# Parameters (adjust based on your use case)
-PARAMETER temperature 0.7
-PARAMETER top_p 0.9
-PARAMETER top_k 40
-PARAMETER repeat_penalty 1.1
+    if modelfile_content:
+        # Get template name for display
+        template_name = MODEL_TO_OLLAMA_TEMPLATE_MAPPER.get(LORA_BASE_MODEL, "unknown")
+        print(f"   Detected template: {template_name} (from Unsloth)")
+    else:
+        # Fallback: Use template mapper to get template from model name
+        print(f"   No direct mapping found in create_ollama_modelfile, checking mapper...")
 
-# System prompt (customize for your model)
-SYSTEM You are a helpful AI assistant.
+        template_key = get_template_for_model(LORA_BASE_MODEL)
 
-# Usage:
-# 1. Create Ollama model:
-#    ollama create my-model -f {modelfile_path}
-#
-# 2. Run the model:
-#    ollama run my-model "Your prompt here"
-#
-# 3. For GGUF versions, see ../gguf/ folder
-""")
-    print(f"✅ Modelfile created")
+        if template_key:
+            # Get Ollama template from CHAT_TEMPLATES using the mapped template name
+            from unsloth.chat_templates import CHAT_TEMPLATES
+
+            ollama_template = None
+            if template_key in CHAT_TEMPLATES:
+                template_tuple = CHAT_TEMPLATES[template_key]
+                if len(template_tuple) >= 4:
+                    ollama_template = template_tuple[3]  # 4th element is Ollama template
+
+            if ollama_template:
+                # Use Unsloth's auto-generated template (works for all models)
+                modelfile_content = ollama_template.replace("{__FILE_LOCATION__}", MERGED_16BIT_DIR)
+                print(f"   ✅ Created Modelfile using '{template_key}' template from mapper")
+            else:
+                template_key = None  # Reset if no template found
+
+        if not template_key and tokenizer.chat_template:
+            # Generic fallback using tokenizer template
+            print(f"   Creating generic Modelfile from tokenizer's chat template...")
+            template = tokenizer.chat_template
+
+            # Create basic Modelfile with template
+            modelfile_content = (
+                f"FROM {MERGED_16BIT_DIR}\n"
+                f'TEMPLATE """{template}"""\n'
+                'PARAMETER stop "<|im_end|>"\n'
+                'PARAMETER stop "<|im_start|>"\n'
+                'PARAMETER temperature 0.6\n'
+                'PARAMETER min_p 0.0\n'
+                'PARAMETER top_k 20\n'
+                'PARAMETER top_p 0.95\n'
+                'PARAMETER repeat_penalty 1\n'
+            )
+            print(f"   ✅ Created generic Modelfile")
+        else:
+            print(f"   ⚠️  Warning: No chat template available")
+            modelfile_content = None
+
+    if modelfile_content:
+        with open(modelfile_path, "w") as f:
+            f.write(modelfile_content)
+
+        print(f"✅ Modelfile created: {modelfile_path}")
+        print(f"\n💡 IMPORTANT: Review the Modelfile before using with Ollama!")
+        print(f"   Verify the chat template matches your training dataset format")
+    else:
+        print(f"⚠️  Could not create Modelfile automatically")
+        print(f"   You may need to create a custom Modelfile manually")
 
     # Optional: Push to HuggingFace
     if PUSH_TO_HUB and HF_TOKEN:
@@ -395,17 +451,109 @@ if gguf_formats:
 
     print()
 
-    # Step 4: Copy tokenizer files (only once)
-    print("Step 4: Copying tokenizer files...")
-    for ext in ["*.json", "*.txt"]:
-        for src_file in Path(MERGED_16BIT_DIR).glob(ext):
-            dst_file = os.path.join(gguf_dir, src_file.name)
-            if not os.path.exists(dst_file) or FORCE_REBUILD:
-                shutil.copy2(src_file, dst_file)
-    print("✅ Tokenizer files copied")
+    # Step 4: GGUF files are self-contained (no tokenizer files needed)
+    print("Step 4: GGUF directory ready (tokenizer embedded in GGUF files)")
     print()
 
-    # Step 5: Summary
+    # Step 5: Create Modelfile for Ollama with auto-detected template
+    print("Step 5: Creating Modelfile for GGUF...")
+    # Find the first quantized file (preferably Q4_K_M)
+    preferred_quant = None
+    for quant_method, quant_file in quantized_files:
+        if quant_method == "Q4_K_M":
+            preferred_quant = quant_file
+            break
+    if not preferred_quant and quantized_files:
+        preferred_quant = quantized_files[0][1]
+
+    if preferred_quant:
+        modelfile_path = os.path.join(gguf_dir, "Modelfile")
+        relative_gguf = os.path.basename(preferred_quant)
+
+        # Try Unsloth's create_ollama_modelfile function first
+        modelfile_content = create_ollama_modelfile(
+            tokenizer=tokenizer,
+            base_model_name=LORA_BASE_MODEL,
+            model_location=f"./{relative_gguf}"
+        )
+
+        if modelfile_content:
+            # Get template name for display
+            template_name = MODEL_TO_OLLAMA_TEMPLATE_MAPPER.get(LORA_BASE_MODEL, "unknown")
+            print(f"   Detected template: {template_name} (from Unsloth)")
+        else:
+            # Fallback: Use template mapper to get template from model name
+            print(f"   No direct mapping found in create_ollama_modelfile, checking mapper...")
+
+            template_key = get_template_for_model(LORA_BASE_MODEL)
+
+            if template_key:
+                # Get Ollama template from CHAT_TEMPLATES using the mapped template name
+                from unsloth.chat_templates import CHAT_TEMPLATES
+
+                ollama_template = None
+                if template_key in CHAT_TEMPLATES:
+                    template_tuple = CHAT_TEMPLATES[template_key]
+                    if len(template_tuple) >= 4:
+                        ollama_template = template_tuple[3]  # 4th element is Ollama template
+
+                if ollama_template:
+                    # Use Unsloth's auto-generated template (works for all models)
+                    modelfile_content = ollama_template.replace("{__FILE_LOCATION__}", f"./{relative_gguf}")
+                    print(f"   ✅ Created Modelfile using '{template_key}' template from mapper")
+                else:
+                    template_key = None  # Reset if no template found
+
+            if not template_key and tokenizer.chat_template:
+                # Generic fallback
+                print(f"   Creating generic Modelfile from tokenizer's chat template...")
+                template = tokenizer.chat_template
+
+                modelfile_content = (
+                    f"FROM ./{relative_gguf}\n"
+                    f'TEMPLATE """{template}"""\n'
+                    'PARAMETER stop "<|im_end|>"\n'
+                    'PARAMETER stop "<|im_start|>"\n'
+                    'PARAMETER temperature 0.6\n'
+                    'PARAMETER min_p 0.0\n'
+                    'PARAMETER top_k 20\n'
+                    'PARAMETER top_p 0.95\n'
+                    'PARAMETER repeat_penalty 1\n'
+                )
+                print(f"   ✅ Created generic Modelfile")
+            else:
+                print(f"   ⚠️  Warning: No chat template available")
+                modelfile_content = None
+
+        if modelfile_content:
+
+            # Add comments about available quantizations
+            available_quants = "\n".join([f"#   - {os.path.basename(qf)}" for _, qf in quantized_files])
+            modelfile_with_comments = f"""# Modelfile for Ollama (GGUF)
+# Auto-generated using Unsloth's template mapper
+# This uses the {os.path.basename(preferred_quant)} quantization
+#
+# Note: You can change the FROM line to use a different quantization
+# Available quantizations in this directory:
+{available_quants}
+
+{modelfile_content}"""
+
+            with open(modelfile_path, "w") as f:
+                f.write(modelfile_with_comments)
+
+            print(f"✅ Modelfile created using Unsloth's template mapper: {modelfile_path}")
+            print(f"\n💡 IMPORTANT: Before pushing GGUF to HuggingFace:")
+            print(f"   1. Test the model locally: ollama create test -f {modelfile_path}")
+            print(f"   2. Verify chat format works: ollama run test \"Hello\"")
+            print(f"   3. Edit Modelfile if needed to match your dataset format")
+            print(f"   4. Then push: python scripts/push.py")
+        else:
+            print(f"⚠️  Warning: Could not create GGUF Modelfile - no template mapping found for {LORA_BASE_MODEL}")
+            print(f"   You may need to create a custom Modelfile manually")
+    print()
+
+    # Step 6: Summary
     print("="*60)
     print("✅ GGUF QUANTIZATIONS COMPLETE")
     print("="*60)
@@ -466,7 +614,7 @@ print("   (Reading training configuration from training_metrics.json)")
 try:
     import subprocess
     result = subprocess.run(
-        ["python", "generate_readme_build.py"],
+        ["python", "scripts/generate_readme_build.py"],
         capture_output=True,
         text=True,
         timeout=10
@@ -479,5 +627,75 @@ try:
             print(f"   Error: {result.stderr}")
 except Exception as e:
     print(f"⚠️  Could not generate READMEs (non-critical): {e}")
+
+# Cleanup: Remove unnecessary files from output directories
+print("\n🧹 Cleaning up unnecessary files...")
+
+def cleanup_directory(directory, keep_patterns, description):
+    """Remove files not matching keep patterns"""
+    if not os.path.exists(directory):
+        return 0
+
+    removed_count = 0
+    removed_size = 0
+
+    for item in Path(directory).iterdir():
+        if item.is_file():
+            # Check if file matches any keep pattern
+            should_keep = any(item.match(pattern) for pattern in keep_patterns)
+
+            if not should_keep:
+                file_size = item.stat().st_size
+                item.unlink()
+                removed_count += 1
+                removed_size += file_size
+        elif item.is_dir() and item.name in ["unsloth_compiled_cache", "__pycache__"]:
+            # Remove cache directories
+            shutil.rmtree(item)
+            removed_count += 1
+
+    if removed_count > 0:
+        size_mb = removed_size / (1024 * 1024)
+        print(f"   {description}: Removed {removed_count} item(s) ({size_mb:.1f} MB)")
+
+    return removed_count
+
+# LoRA directory - keep only essential files
+lora_keep = [
+    "adapter_config.json",          # LoRA adapter configuration
+    "adapter_model.safetensors",    # LoRA weights
+    "training_metrics.json",        # Training stats (steps, epochs, loss, time)
+    "trainer_state.json",           # Trainer state (fallback for README generation)
+    "README.md",
+    "*.md"  # Keep any markdown files
+]
+cleanup_directory(LORA_DIR, lora_keep, "LoRA")
+
+# Merged directory - keep only model and essential files
+merged_dir = os.path.join(OUTPUT_DIR, "merged_16bit")
+merged_keep = [
+    "model.safetensors",
+    "config.json",
+    "generation_config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "Modelfile",
+    "README.md",
+    "*.md"
+]
+cleanup_directory(merged_dir, merged_keep, "Merged")
+
+# GGUF directory - keep only GGUF files (self-contained, no tokenizer needed)
+gguf_dir = os.path.join(OUTPUT_DIR, "gguf")
+gguf_keep = [
+    "*.gguf",
+    "Modelfile",
+    "README.md",
+    "*.md"
+]
+cleanup_directory(gguf_dir, gguf_keep, "GGUF")
+
+print("✅ Cleanup complete!")
 
 print("="*60 + "\n")

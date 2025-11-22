@@ -256,7 +256,7 @@ print(f'CUDA: {torch.cuda.is_available()}')
 "
 
 # Full test (runs training for 5 steps)
-python train.py  # Uses .env.test config
+python scripts/train.py  # Uses .env.test config
 ```
 
 ---

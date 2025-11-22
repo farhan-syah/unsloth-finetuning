@@ -14,7 +14,9 @@ import torch
 import os
 import json
 from datetime import datetime
-from unsloth import FastLanguageModel
+from unsloth import FastLanguageModel, standardize_sharegpt
+from unsloth.chat_templates import get_chat_template
+from unsloth.ollama_template_mappers import MODEL_TO_OLLAMA_TEMPLATE_MAPPER
 from datasets import load_dataset, get_dataset_split_names, concatenate_datasets
 from dotenv import load_dotenv
 import math
@@ -23,6 +25,15 @@ import math
 load_dotenv()
 
 # Helper functions
+def get_template_for_model(model_name):
+    """
+    Get chat template name for a given model using Unsloth's mapper.
+    Returns template name (e.g., "llama-3.1", "qwen2.5") or None if not found.
+    """
+    if model_name in MODEL_TO_OLLAMA_TEMPLATE_MAPPER:
+        return MODEL_TO_OLLAMA_TEMPLATE_MAPPER[model_name]
+    return None
+
 def get_bool_env(key, default=False):
     val = os.getenv(key, str(default)).lower()
     return val in ('true', '1', 'yes', 'on')
@@ -133,6 +144,76 @@ try:
         cache_dir=CACHE_DIR
     )
 
+    # Detect if model is a reasoning model by checking chat template
+    print(f"\n   🔍 Detecting model capabilities...")
+    is_reasoning_model = False
+    supports_enable_thinking = False
+
+    # Check if tokenizer has a chat template, if not set one
+    if not tokenizer.chat_template:
+        print(f"   ⚠️  Model has no chat template (typical for base models)")
+
+        # Try to get template from Unsloth's official mapper first
+        template_name = get_template_for_model(LORA_BASE_MODEL)
+
+        if template_name:
+            print(f"   Setting '{template_name}' template (from Unsloth mapper)...")
+        else:
+            # Fallback: Pattern matching for base models or unmapped variants
+            # Base models aren't in the mapper, so we use pattern matching
+            print(f"   Model not in mapper, using pattern matching...")
+            model_name_lower = LORA_BASE_MODEL.lower()
+            if "llama-3.2" in model_name_lower or "llama-3.1" in model_name_lower:
+                template_name = "llama-3.1"
+            elif "llama-3" in model_name_lower or "llama3" in model_name_lower:
+                template_name = "llama3"
+            elif "llama-2" in model_name_lower or "llama2" in model_name_lower:
+                template_name = "llama"
+            elif "qwen3" in model_name_lower:
+                template_name = "qwen3"
+            elif "qwen2.5" in model_name_lower or "qwen-2.5" in model_name_lower:
+                template_name = "qwen-2.5"
+            elif "qwen2" in model_name_lower or "qwen-2" in model_name_lower:
+                template_name = "qwen-2"
+            elif "phi" in model_name_lower:
+                template_name = "phi-3"
+            elif "gemma-3" in model_name_lower or "gemma3" in model_name_lower:
+                template_name = "gemma-3"
+            elif "gemma-2" in model_name_lower or "gemma2" in model_name_lower:
+                template_name = "gemma2"
+            elif "gemma" in model_name_lower:
+                template_name = "gemma"
+            elif "mistral" in model_name_lower:
+                template_name = "mistral"
+            else:
+                template_name = "chatml"  # Generic fallback
+            print(f"   Setting '{template_name}' template (pattern matched)...")
+        tokenizer = get_chat_template(
+            tokenizer,
+            chat_template=template_name,
+        )
+        print(f"   ✅ Chat template set")
+
+    if tokenizer.chat_template:
+        template_str = str(tokenizer.chat_template).lower()
+        # Check for reasoning indicators in template
+        reasoning_template_markers = ["<think>", "reasoning", "chain-of-thought", "cot"]
+        is_reasoning_model = any(marker in template_str for marker in reasoning_template_markers)
+
+        # Test if model supports enable_thinking parameter (Qwen3, etc.)
+        try:
+            test_msgs = [{"role": "user", "content": "test"}]
+            tokenizer.apply_chat_template(test_msgs, tokenize=False, enable_thinking=False)
+            supports_enable_thinking = True
+        except (TypeError, AttributeError):
+            supports_enable_thinking = False
+
+    if is_reasoning_model:
+        thinking_support = " (enable_thinking parameter)" if supports_enable_thinking else ""
+        print(f"   ✅ Detected REASONING model{thinking_support}")
+    else:
+        print(f"   ✅ Detected STANDARD model (no reasoning template)")
+
     # Measure actual VRAM used
     if torch.cuda.is_available():
         model_vram_bytes = torch.cuda.max_memory_allocated()
@@ -193,51 +274,230 @@ elif preprocess_exists and FORCE_PREPROCESS:
 if not preprocess_exists:
     print(f"📚 Loading dataset: {DATASET_NAME}")
 
+    # Check if dataset requires authentication and handle login
+    try:
+        # Try to get dataset config (this will fail if gated and not logged in)
+        from huggingface_hub import dataset_info, HfApi
+        try:
+            info = dataset_info(DATASET_NAME)
+            if info.gated:
+                print(f"⚠️  Dataset '{DATASET_NAME}' is gated and requires authentication")
+                print(f"   Checking HuggingFace login status...")
+
+                # Check if already logged in
+                try:
+                    api = HfApi()
+                    api.whoami()
+                    print(f"   ✅ Already logged in to HuggingFace")
+                except Exception:
+                    # Need to login
+                    print(f"\n🔐 Please login to HuggingFace to access this dataset")
+                    print(f"   Get your token from: https://huggingface.co/settings/tokens")
+                    from huggingface_hub import login
+                    try:
+                        login()
+                        print(f"   ✅ Login successful!")
+                    except Exception as e:
+                        print(f"\n❌ Login failed: {e}")
+                        print(f"\nAlternatively, set HF_TOKEN in your .env file")
+                        print(f"Or use an ungated dataset like 'yahma/alpaca-cleaned'")
+                        exit(1)
+        except Exception:
+            # Dataset info fetch failed, might still work if public
+            pass
+    except ImportError:
+        pass
+
     # Load all splits
-    splits = get_dataset_split_names(DATASET_NAME)
-    print(f"   Found {len(splits)} splits: {splits}")
+    try:
+        # First try standard loading
+        splits = get_dataset_split_names(DATASET_NAME)
+        print(f"   Found {len(splits)} splits: {splits}")
 
-    all_datasets = []
-    for split_name in splits:
-        split_data = load_dataset(DATASET_NAME, split=split_name)
-        all_datasets.append(split_data)
-        print(f"   Loaded {split_name}: {len(split_data)} samples")
+        all_datasets = []
+        for split_name in splits:
+            split_data = load_dataset(DATASET_NAME, split=split_name)
+            all_datasets.append(split_data)
+            print(f"   Loaded {split_name}: {len(split_data)} samples")
 
-    dataset = concatenate_datasets(all_datasets)
-    print(f"   Total samples (all splits): {len(dataset)}")
+        dataset = concatenate_datasets(all_datasets)
+        print(f"   Total samples (all splits): {len(dataset)}")
+    except RuntimeError as e:
+        if "Dataset scripts are no longer supported" in str(e):
+            print(f"   ⚠️  Dataset uses legacy loading script")
+            print(f"   Loading as generic JSON dataset...")
+            # Load as generic json/jsonl without the dataset-specific script
+            # This bypasses the deprecated lima.py script
+            from huggingface_hub import hf_hub_download
+
+            # Download the data file directly
+            data_file = hf_hub_download(
+                repo_id=DATASET_NAME,
+                filename="train.jsonl",
+                repo_type="dataset"
+            )
+
+            # Load as generic JSON
+            dataset = load_dataset("json", data_files=data_file, split="train")
+            print(f"   Loaded dataset: {len(dataset)} samples")
+        else:
+            raise
+
+    # Detect dataset type (reasoning vs standard)
+    print(f"\n   🔍 Analyzing dataset content...")
+    sample_size = min(50, len(dataset))
+    reasoning_count = 0
+
+    # Reasoning indicators in dataset content
+    reasoning_indicators = [
+        "<think>", "</think>",  # Explicit thinking tags
+        "let me think", "let's think", "thinking step by step",
+        "step 1:", "step 2:", "step 3:",  # Step-by-step
+        "reasoning:", "analysis:", "let's break this down",
+        "first,", "second,", "finally,",  # Sequential reasoning
+    ]
+
+    for i in range(sample_size):
+        sample_text = str(dataset[i]).lower()
+        if any(indicator in sample_text for indicator in reasoning_indicators):
+            reasoning_count += 1
+
+    # Dataset is "reasoning" if >20% of samples show reasoning
+    is_reasoning_dataset = (reasoning_count / sample_size) > 0.2
+
+    if is_reasoning_dataset:
+        print(f"   ✅ Detected REASONING dataset ({reasoning_count}/{sample_size} samples have chain-of-thought)")
+    else:
+        print(f"   ✅ Detected STANDARD dataset ({reasoning_count}/{sample_size} samples have reasoning)")
+
+    # Validate model-dataset compatibility
+    print(f"\n   🔍 Validating model-dataset compatibility...")
+    print(f"      Model type: {'REASONING' if is_reasoning_model else 'STANDARD'}")
+    print(f"      Dataset type: {'REASONING' if is_reasoning_dataset else 'STANDARD'}")
+
+    # Store whether to enable thinking based on compatibility
+    enable_thinking = True  # Default for reasoning models
+
+    if is_reasoning_model and not is_reasoning_dataset:
+        print(f"\n   ⚠️  WARNING: MISMATCH DETECTED!")
+        print(f"      You are training a REASONING model on a STANDARD dataset.")
+        print(f"      This will likely cause the model to:")
+        print(f"      • Output empty <think></think> tags")
+        print(f"      • Lose its reasoning capabilities")
+        print(f"      • Produce degraded responses")
+        print(f"\n   💡 Recommended actions:")
+        print(f"      1. Use a reasoning dataset (with chain-of-thought examples)")
+        if supports_enable_thinking:
+            print(f"      2. OR disable reasoning (set enable_thinking=False)")
+        else:
+            print(f"      2. OR switch to 'chatml' template")
+        print(f"\n   ❓ Continue with reasoning disabled? (y/N): ", end="")
+        response = input().strip().lower()
+        if response not in ['y', 'yes']:
+            print(f"\n   ❌ Preprocessing cancelled by user")
+            exit(0)
+        else:
+            if supports_enable_thinking:
+                print(f"\n   ⚠️  Disabling thinking mode (enable_thinking=False)")
+                enable_thinking = False
+            else:
+                print(f"\n   ⚠️  Switching to 'chatml' template (disabling reasoning)")
+                tokenizer = get_chat_template(tokenizer, chat_template="chatml")
+
+    elif not is_reasoning_model and is_reasoning_dataset:
+        print(f"\n   ⚠️  WARNING: MISMATCH DETECTED!")
+        print(f"      You are training a STANDARD model on a REASONING dataset.")
+        print(f"      The model doesn't support reasoning templates.")
+        print(f"\n   💡 Recommended: Use a reasoning-capable model (e.g., Qwen, DeepSeek-R1)")
+        print(f"\n   ❓ Continue anyway? (y/N): ", end="")
+        response = input().strip().lower()
+        if response not in ['y', 'yes']:
+            print(f"\n   ❌ Preprocessing cancelled by user")
+            exit(0)
+    else:
+        print(f"   ✅ Model and dataset are compatible!")
+        if is_reasoning_model and is_reasoning_dataset:
+            print(f"      Using default reasoning template")
+        else:
+            print(f"      Using standard chat template")
 
     # Convert to chat template format
     if tokenizer:
-        def convert_to_text(example):
-            try:
-                prompt_input = example.get("prompt_input", "") or ""
-                user_input = example.get("input", "") or ""
-                output = example.get("output", "") or ""
+        # Check format of first sample
+        first_sample = dataset[0]
 
-                if not user_input or not output:
-                    return {"text": ""}
+        # Some datasets have conversations as a list of strings (alternating user/assistant)
+        if "conversations" in first_sample and isinstance(first_sample["conversations"], list):
+            if len(first_sample["conversations"]) > 0 and isinstance(first_sample["conversations"][0], str):
+                print(f"\n   Detected alternating string conversation format")
 
-                if prompt_input and prompt_input.strip():
-                    full_input = f"{prompt_input}\n{user_input}"
-                else:
-                    full_input = user_input
+                # Convert alternating strings to messages format
+                def strings_to_messages(example):
+                    convos = example.get("conversations", [])
+                    messages = []
+                    for i, content in enumerate(convos):
+                        role = "user" if i % 2 == 0 else "assistant"
+                        messages.append({"role": role, "content": content})
+                    return {"messages": messages}
 
-                messages = [
-                    {"role": "user", "content": full_input},
-                    {"role": "assistant", "content": output}
-                ]
-
-                text = tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=False
+                print(f"   Converting to messages format...")
+                dataset = dataset.map(strings_to_messages, num_proc=4, desc="Converting format")
+                print(f"   ✅ Converted to HuggingFace chat format")
+            else:
+                # Standard ShareGPT format with dicts
+                print(f"\n   🦥 Standardizing dataset format using Unsloth...")
+                dataset = standardize_sharegpt(
+                    dataset,
+                    tokenizer=tokenizer,
+                    aliases_for_system=["system"],
+                    aliases_for_user=["user", "human", "input"],
+                    aliases_for_assistant=["gpt", "assistant", "output"],
+                    num_proc=4
                 )
+                print(f"   ✅ Dataset standardized to HuggingFace chat format")
+        else:
+            # Use Unsloth's standardizer for other formats
+            print(f"\n   🦥 Standardizing dataset format using Unsloth...")
+            dataset = standardize_sharegpt(
+                dataset,
+                tokenizer=tokenizer,
+                aliases_for_system=["system"],
+                aliases_for_user=["user", "human", "input"],
+                aliases_for_assistant=["gpt", "assistant", "output"],
+                num_proc=4
+            )
+            print(f"   ✅ Dataset standardized to HuggingFace chat format")
 
-                return {"text": text}
-            except:
+        # Apply chat template to convert messages to text
+        def convert_to_text(example):
+            messages = example.get("messages", [])
+            if not messages:
                 return {"text": ""}
 
-        print("\n   Applying chat template...")
+            # Apply chat template
+            # Only use enable_thinking for models that support it
+            try:
+                if supports_enable_thinking:
+                    text = tokenizer.apply_chat_template(
+                        messages,
+                        tokenize=False,
+                        add_generation_prompt=False,
+                        enable_thinking=enable_thinking
+                    )
+                else:
+                    text = tokenizer.apply_chat_template(
+                        messages,
+                        tokenize=False,
+                        add_generation_prompt=False
+                    )
+                return {"text": text}
+            except Exception as e:
+                # Log error for debugging
+                print(f"\n⚠️  Error converting sample: {str(e)[:100]}")
+                return {"text": ""}
+
+        thinking_status = "enabled" if enable_thinking else "disabled"
+        print(f"   Applying chat template (thinking: {thinking_status})...")
         dataset = dataset.map(convert_to_text, num_proc=4, desc="Formatting")
 
         print("   Filtering invalid samples...")
@@ -245,6 +505,13 @@ if not preprocess_exists:
         dataset = dataset.filter(lambda x: len(x["text"]) > 0)
         filtered_out = original_size - len(dataset)
         print(f"   ✅ Kept {len(dataset)}/{original_size} valid samples ({filtered_out} filtered)")
+
+        # Check if all samples were filtered out
+        if len(dataset) == 0:
+            print(f"\n❌ ERROR: All samples were filtered out!")
+            print(f"   This usually means the chat template conversion failed.")
+            print(f"   Check that the model supports the dataset format.")
+            exit(1)
 
     # Check sequence lengths using HYBRID APPROACH
     # Step 1: Fast character-based estimation (filters ~95% instantly)
@@ -517,7 +784,7 @@ print("✅ PREPROCESSING COMPLETE")
 print("="*70)
 print(f"\nNext steps:")
 print(f"1. Update your .env file with recommended settings above")
-print(f"2. Run: python train.py")
+print(f"2. Run: python scripts/train.py")
 print(f"3. Monitor training loss - stop if it plateaus early")
 print(f"\nPreprocessed data saved to: {PREPROCESSED_DATASET_PATH}")
 print("="*70 + "\n")

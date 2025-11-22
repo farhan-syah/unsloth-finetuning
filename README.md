@@ -73,10 +73,10 @@ The pipeline remembers what it's already done:
 - Already quantized? Skip quantization
 
 ### 5. **Dataset Flexibility**
-Works with any HuggingFace dataset in SFT (Supervised Fine-Tuning) format. Popular options:
-- `yahma/alpaca-cleaned` - General instruction-following (52K samples)
-- `OpenAssistant/oasst1` - Conversational AI (88K samples)
-- Your own dataset on HuggingFace
+Works with any HuggingFace dataset in SFT (Supervised Fine-Tuning) format:
+- High-quality curated datasets (1K-5K samples)
+- Large instruction datasets (10K-100K samples)
+- Your own custom dataset on HuggingFace
 
 ### What is SFT Format?
 
@@ -109,6 +109,7 @@ The pipeline automatically detects and converts between these formats.
 - 🔄 **Smart caching** - Skip completed steps automatically
 - 📦 **Multiple formats** - LoRA, merged safetensors, GGUF quantizations
 - 🔧 **Single config file** - Everything controlled via `.env`
+- 🤖 **Auto-detection** - Chat templates, dataset formats, and model types detected automatically
 
 ## 🚀 Quick Start
 
@@ -181,9 +182,9 @@ vim .env  # or nano, code, etc.
 
 Key settings to change:
 ```bash
-LORA_BASE_MODEL=unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit  # Pick your model
-DATASET_NAME=yahma/alpaca-cleaned                              # Pick your dataset
-OUTPUT_FORMATS=gguf_q4_k_m                                     # Choose output format
+LORA_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct-bnb-4bit  # Pick your model
+DATASET_NAME=your-dataset/name                          # Pick your dataset
+OUTPUT_FORMATS=gguf_q4_k_m                              # Choose output format
 ```
 
 See [Configuration Guide](docs/CONFIGURATION.md) for all options.
@@ -191,7 +192,7 @@ See [Configuration Guide](docs/CONFIGURATION.md) for all options.
 ### 3. Train (2 minutes)
 
 ```bash
-python train.py
+python scripts/train.py
 ```
 
 **What happens:**
@@ -201,14 +202,14 @@ python train.py
 4. Saves adapters to `outputs/{model-name}/lora/`
 
 **Output:**
-- `outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/lora/` - LoRA adapters (~50-100MB)
+- `outputs/{model-name}-{dataset-name}/lora/` - LoRA adapters (~50-200MB)
 
 These adapters are lightweight and can be applied to the base model.
 
 ### 4. Build (5 minutes)
 
 ```bash
-python build.py
+python scripts/build.py
 ```
 
 **What happens:**
@@ -217,25 +218,26 @@ python build.py
 3. (Optional) Converts to GGUF for Ollama/llama.cpp
 
 **Output:**
-- `merged_16bit/` - Complete merged model (~3.4GB for 1.7B model)
+- `merged_16bit/` - Complete merged model (size varies by model)
 - `gguf/` - GGUF quantized versions (if `OUTPUT_FORMATS` set)
-  - `model.Q4_K_M.gguf` - 4-bit quantization (~1.0GB)
+  - `model.Q4_K_M.gguf` - 4-bit quantization (typically 50-60% of original size)
 
 ### 5. Use Your Model
 
 **With Ollama:**
 ```bash
-cd outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/merged_16bit
+cd outputs/{model-name}-{dataset-name}/merged_16bit
 ollama create my-model -f Modelfile
-ollama run my-model "Explain quantum computing"
+ollama run my-model "Your prompt here"
 ```
 
 **With Python:**
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-model = AutoModelForCausalLM.from_pretrained("outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/merged_16bit")
-tokenizer = AutoTokenizer.from_pretrained("outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/merged_16bit")
+model_path = "outputs/{model-name}-{dataset-name}/merged_16bit"
+model = AutoModelForCausalLM.from_pretrained(model_path)
+tokenizer = AutoTokenizer.from_pretrained(model_path)
 ```
 
 **Quality Note:** By default, merging uses the 4-bit training base. For true 16-bit quality, set `INFERENCE_BASE_MODEL` to the original unquantized model in `.env` (requires 20-30GB VRAM during build).
@@ -250,9 +252,9 @@ tokenizer = AutoTokenizer.from_pretrained("outputs/Qwen3-VL-2B-Instruct-alpaca-c
 - **Disk:** ~15GB free space for model + outputs
 - **OS:** Linux, macOS, Windows (WSL2)
 
-**Real VRAM usage examples** (Qwen3-VL-2B-Instruct, LoRA r=16):
-- Quick test (100 samples): **3.79 GB**
-- Full training (19K samples): **5.88 GB**
+**Real VRAM usage examples** (2B model, LoRA r=16):
+- Quick test (100 samples): ~4GB VRAM
+- Full training (10K+ samples): ~6GB VRAM
 
 ## 📊 Choosing Your Dataset
 
@@ -260,17 +262,15 @@ The pipeline works with any HuggingFace dataset in **SFT (Supervised Fine-Tuning
 
 ### Popular Pre-made Datasets
 
-| Dataset | Size | Best For | Usage |
-|---------|------|----------|-------|
-| `yahma/alpaca-cleaned` | 52K | General instruction-following | Default in `.env.example` |
-| `OpenAssistant/oasst1` | 88K | Conversational AI, multilingual | Great for chatbots |
-| `swordfaith/ReTool-SFT-multi-turn` | 2K | Multi-turn conversations | Function calling, tool use |
-| `timdettmers/openassistant-guanaco` | 10K | High-quality instructions | Smaller, focused training |
-| `tatsu-lab/alpaca` | 52K | Original Alpaca dataset | Alternative to cleaned version |
+| Dataset Type | Size Range | Best For | Examples |
+|--------------|------------|----------|----------|
+| High-quality curated | 1K-5K | Best quality, prevents catastrophic forgetting | GAIR/lima, Others |
+| Large instruction | 10K-100K | General instruction-following | yahma/alpaca-cleaned, databricks/databricks-dolly-15k |
+| Domain-specific | Varies | Specialized tasks | Medical, legal, code datasets |
 
 Just set in `.env`:
 ```bash
-DATASET_NAME=yahma/alpaca-cleaned
+DATASET_NAME=your-dataset/name  # Any HuggingFace dataset
 ```
 
 ### Using Your Own Dataset
@@ -306,12 +306,45 @@ Upload your dataset to HuggingFace, then use its name. Your dataset should be in
 
 The pipeline handles format detection and conversion automatically.
 
+### 🤖 Smart Auto-Detection
+
+The pipeline automatically detects and configures many settings for you:
+
+**Chat Template Auto-Detection**
+- Detects model type from name (Llama, Qwen, Phi, Gemma, etc.)
+- Automatically sets correct chat template:
+  - Llama-3.1/3.2: Uses `llama-3.1` template (official Unsloth format)
+  - Qwen2.5: Uses `qwen2.5` template
+  - Phi-3: Uses `phi-3` template
+  - Gemma: Uses `gemma` template
+- Base models without templates are configured automatically
+
+**Dataset Format Detection**
+- Alternating string conversations (LIMA format)
+- ShareGPT format (`{"from": "human", "value": "..."}`)
+- Standard messages format (`{"role": "user", "content": "..."}`)
+- Instruction-output formats
+- Automatically converts between formats
+
+**Model Type Detection**
+- Reasoning models (Qwen3 with `<think>` tags)
+- Instruct vs Base models
+- Gated datasets (prompts for HuggingFace login)
+
+**Smart Recommendations**
+Running `python scripts/preprocess.py` analyzes your dataset and recommends:
+- Optimal `BATCH_SIZE` based on GPU memory
+- Recommended `MAX_STEPS` for 1-3 epochs
+- Sequence length statistics
+- Dataset compatibility warnings
+
 ### Dataset Tips
 
 1. **Quality over quantity:** 1,000 high-quality examples > 10,000 poor examples
 2. **Consistency:** Keep formatting consistent across all examples
 3. **Diversity:** Include varied examples covering your use case
 4. **Length:** Most examples should fit in MAX_SEQ_LENGTH (default: 4096 tokens)
+5. **Model selection:** Use Instruct models for small datasets (<5K), Base models for large datasets (>10K)
 
 See [docs/TRAINING.md](docs/TRAINING.md) for detailed dataset guidance.
 
@@ -366,11 +399,11 @@ Or manually:
 In the notebook, edit Step 3 configuration:
 
 ```python
-# Quick test (2 minutes)
-LORA_BASE_MODEL = "unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit"
-DATASET_NAME = "yahma/alpaca-cleaned"
-MAX_STEPS = 50
-DATASET_MAX_SAMPLES = 100
+# Quick test (30 minutes - full LIMA dataset)
+LORA_BASE_MODEL = "unsloth/Qwen3-1.7B-unsloth-bnb-4bit"
+DATASET_NAME = "GAIR/lima"
+MAX_STEPS = 0              # Full epoch
+DATASET_MAX_SAMPLES = 0    # All 1K samples
 
 # Full production training
 # MAX_STEPS = 0          # Full epochs
@@ -504,8 +537,8 @@ SAVE_ONLY_FINAL=false     # Save checkpoints during training
 
 Then run:
 ```bash
-python train.py  # Hours (depends on dataset size)
-python build.py  # Minutes per quantization
+python scripts/train.py  # Hours (depends on dataset size)
+python scripts/build.py  # Minutes per quantization
 ```
 
 ### Using Different Models
@@ -516,16 +549,16 @@ The pipeline supports any Unsloth-compatible model. Choose based on your GPU:
 # In .env, change LORA_BASE_MODEL:
 
 # 6GB+ VRAM (GTX 1660, RTX 3050, RTX 4060)
-LORA_BASE_MODEL=unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit
+LORA_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct-bnb-4bit
 # Typical usage: 4-6GB depending on dataset size
 
-# 12GB+ VRAM (RTX 3060, RTX 4060 Ti)
-LORA_BASE_MODEL=unsloth/Qwen3-4B-unsloth-bnb-4bit
-# Typical usage: 8-12GB
+# 8GB+ VRAM (RTX 3060, RTX 4060)
+LORA_BASE_MODEL=unsloth/Llama-3.2-3B-Instruct-bnb-4bit
+# Typical usage: 6-8GB
 
-# 24GB+ VRAM (RTX 3090, RTX 4090, A5000)
-LORA_BASE_MODEL=unsloth/Qwen3-8B-unsloth-bnb-4bit
-# Typical usage: 16-24GB
+# 16GB+ VRAM (RTX 3090, RTX 4080)
+LORA_BASE_MODEL=unsloth/Llama-3.1-8B-Instruct-bnb-4bit
+# Typical usage: 12-16GB
 
 # Browse more at: https://huggingface.co/unsloth
 ```
@@ -542,20 +575,19 @@ Key settings in `.env`:
 
 ```bash
 # Model Selection (choose based on VRAM)
-LORA_BASE_MODEL=unsloth/Qwen3-VL-2B-Instruct-unsloth-bnb-4bit  # 6-8GB VRAM (2.42GB model)
-# LORA_BASE_MODEL=unsloth/Qwen3-4B-unsloth-bnb-4bit            # 12GB VRAM
-# LORA_BASE_MODEL=unsloth/Qwen3-8B-unsloth-bnb-4bit            # 24GB VRAM
+LORA_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct-bnb-4bit  # 4-6GB VRAM
+# Other options: Llama-3.2-3B, Phi-3.5, Qwen2.5-1.5B, etc.
 
-# Optional: Use 16-bit base for merging (better quality, more VRAM during build)
-INFERENCE_BASE_MODEL=  # Empty = use LORA_BASE_MODEL (4-bit quality)
-# INFERENCE_BASE_MODEL=Qwen/Qwen2.5-VL-2B-Instruct  # 16-bit (requires 15-20GB VRAM for build)
+# Optional: Use unquantized base for merging (better quality, more VRAM during build)
+INFERENCE_BASE_MODEL=  # Empty = use LORA_BASE_MODEL (4-bit)
+# INFERENCE_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct  # Unquantized (requires 15-20GB VRAM for build)
 
 # Output name for directories and files
 OUTPUT_MODEL_NAME=auto  # Auto = model + dataset name
 # OUTPUT_MODEL_NAME=my-chatbot-v1  # Custom name for better organization
 
 # Dataset
-DATASET_NAME=yahma/alpaca-cleaned  # Popular instruction-following dataset
+DATASET_NAME=your-dataset/name  # Any HuggingFace dataset
 
 # Training (Quick Test)
 MAX_STEPS=50              # Train for 50 steps only
@@ -616,8 +648,8 @@ outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/  # Auto-generated: {model}-{dataset
 
 **Solutions:**
 1. Check the exact dataset name on HuggingFace
-2. Ensure dataset is public or you're logged in: `huggingface-cli login`
-3. Try a known dataset first: `yahma/alpaca-cleaned`
+2. For gated datasets like LIMA, run `python scripts/preprocess.py` (auto-prompts login)
+3. Try ungated alternative: `yahma/alpaca-cleaned`
 
 ### Training is Too Slow
 

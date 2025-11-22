@@ -152,7 +152,7 @@ model = FastLanguageModel.get_peft_model(
 )
 
 # Load preprocessed dataset
-# NOTE: Run 'python preprocess.py' first to preprocess your dataset
+# NOTE: Run 'python scripts/preprocess.py' first to preprocess your dataset
 preprocess_exists = os.path.exists(PREPROCESSED_DATASET_PATH)
 metadata_path = os.path.join(PREPROCESSED_DATASET_PATH, "preprocessing_metadata.json")
 
@@ -162,12 +162,12 @@ if not preprocess_exists:
     print("="*60)
     print(f"\nExpected location: {PREPROCESSED_DATASET_PATH}")
     print(f"\n🔧 REQUIRED: Run preprocessing first:")
-    print(f"   python preprocess.py")
+    print(f"   python scripts/preprocess.py")
     print(f"\nThis will:")
     print(f"   • Preprocess and analyze your dataset")
     print(f"   • Provide smart configuration recommendations")
     print(f"   • Save preprocessed data for training")
-    print(f"\nAfter preprocessing, run 'python train.py' again")
+    print(f"\nAfter preprocessing, run 'python scripts/train.py' again")
     print("="*60 + "\n")
     exit(1)
 
@@ -187,7 +187,7 @@ if os.path.exists(metadata_path):
         print(f"   Filtered out: {metadata['filtered_count']} samples (exceeded MAX_SEQ_LENGTH)")
 else:
     print(f"✅ Loaded {len(dataset)} samples")
-    print(f"   ⚠️  No metadata found - run 'python preprocess.py' to regenerate with stats")
+    print(f"   ⚠️  No metadata found - run 'python scripts/preprocess.py' to regenerate with stats")
 
 # Limit dataset for testing if requested
 if DATASET_MAX_SAMPLES > 0 and len(dataset) > DATASET_MAX_SAMPLES:
@@ -270,7 +270,7 @@ except (RuntimeError, ValueError) as e:
         print("\n1. Enable length filtering (recommended for first run):")
         print("   • Set CHECK_SEQ_LENGTH=true in .env")
         print("   • Set FORCE_PREPROCESS=true in .env")
-        print("   • Re-run: python train.py")
+        print("   • Re-run: python scripts/train.py")
         print("   • This will filter out samples exceeding MAX_SEQ_LENGTH")
         print("\n2. Increase context length:")
         print(f"   • Current: MAX_SEQ_LENGTH={MAX_SEQ_LENGTH}")
@@ -291,10 +291,12 @@ print("="*60)
 
 # Save LoRA adapters (small, for continued training)
 print(f"\n💾 Saving LoRA adapters to: {LORA_DIR}")
-model.save_pretrained(LORA_DIR)
-tokenizer.save_pretrained(LORA_DIR)
+# Save with token=False to avoid unnecessary network calls
+# The base model config is already in local cache
+model.save_pretrained(LORA_DIR, token=False)
+tokenizer.save_pretrained(LORA_DIR, token=False)
 print(f"✅ LoRA adapters saved!")
-print(f"\n💡 To create merged models and other formats, run: python build.py")
+print(f"\n💡 To create merged models and other formats, run: python scripts/build.py")
 
 # Save training metrics for README generation
 import json
@@ -428,7 +430,7 @@ print(f"  Location: {LORA_DIR}")
 
 # Show next steps
 print(f"\n💡 Next Steps:")
-print(f"  Run: python build.py")
+print(f"  Run: python scripts/build.py")
 print(f"\n  This will create:")
 print(f"    • merged_16bit/ (merged model + Modelfile)")
 

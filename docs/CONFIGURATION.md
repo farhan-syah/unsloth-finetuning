@@ -290,7 +290,7 @@ CHECK_SEQ_LENGTH=true
 FORCE_PREPROCESS=true
 ```
 
-Run `python train.py` to filter out long samples.
+Run `python scripts/train.py` to filter out long samples.
 
 ## See Also
 

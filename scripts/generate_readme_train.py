@@ -85,7 +85,7 @@ LORA_DIR = os.path.join(OUTPUT_DIR, "lora")
 # Check if training has been done
 if not os.path.exists(LORA_DIR):
     print(f"❌ LoRA directory not found: {LORA_DIR}")
-    print("   Run 'python train.py' first")
+    print("   Run 'python scripts/train.py' first")
     exit(1)
 
 # Try to load training metrics from our custom metrics file
@@ -415,7 +415,7 @@ To create other formats from LoRA adapters:
 OUTPUT_FORMATS=lora_only,merged_16bit,gguf_q4_k_m
 
 # Run build script
-python build.py
+python scripts/build.py
 ```
 
 Available formats:
