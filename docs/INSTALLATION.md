@@ -255,8 +255,8 @@ print('✅ All critical packages OK')
 print(f'CUDA: {torch.cuda.is_available()}')
 "
 
-# Full test (runs training for 5 steps)
-python scripts/train.py  # Uses .env.test config
+# Full test (runs training for quick test)
+python scripts/train.py  # Uses .env config (copy from .env.example)
 ```
 
 ---

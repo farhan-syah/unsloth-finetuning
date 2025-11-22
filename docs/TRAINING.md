@@ -6,7 +6,8 @@ Tips, best practices, and troubleshooting for fine-tuning with Unsloth.
 
 ```bash
 # Test training (2 minutes)
-cp .env.test .env
+cp .env.example .env
+# The example is already configured for quick testing
 python scripts/train.py
 
 # Full training
@@ -82,9 +83,9 @@ After training completes, you'll see:
 
 ### 1. Always Test First
 
-Use `.env.test` for quick validation:
+The `.env.example` is pre-configured for quick validation:
 ```bash
-cp .env.test .env
+cp .env.example .env
 python scripts/train.py  # ~2 minutes
 ```
 
