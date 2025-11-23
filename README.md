@@ -2,6 +2,8 @@
 
 A streamlined pipeline for LLM fine-tuning using Unsloth and LoRA. Includes training, model merging, and GGUF conversion.
 
+> **📚 New to fine-tuning?** Start with [Understanding Fine-Tuning](docs/UNDERSTANDING_FINETUNING.md) to learn what fine-tuning really means, when benchmark scores matter (and when they don't), and how to measure success for YOUR use case.
+
 ## 📖 What is Fine-tuning?
 
 **Fine-tuning** is the process of taking a pre-trained AI model (like Llama, Qwen, or Gemma) and teaching it new skills or behaviors using your own data. Think of it like this:
@@ -66,11 +68,12 @@ No Python coding required - just edit text configuration.
 
 One command creates all formats you need.
 
-### 4. **Smart Caching**
-The pipeline remembers what it's already done:
-- Already trained? Skip training
-- Already merged? Skip merging
-- Already quantized? Skip quantization
+### 4. **Smart Caching & Backup**
+The pipeline is smart about data management:
+- **Automatic backups** - Existing training automatically backed up before retraining
+- **Smart merging** - Skip merging if already done
+- **Smart quantization** - Skip quantization if already done
+- **Easy restore** - Roll back to any previous training with one command
 
 ### 5. **Dataset Flexibility**
 Works with any HuggingFace dataset in SFT (Supervised Fine-Tuning) format:
@@ -106,7 +109,7 @@ The pipeline automatically detects and converts between these formats.
 - 🚀 **2x faster training** with Unsloth
 - 💾 **Low VRAM usage** - Train 2B models with ~4-6GB VRAM (depends on dataset size)
 - 🎯 **One-command setup** - Automated installation
-- 🔄 **Smart caching** - Skip completed steps automatically
+- 🔄 **Smart caching & backups** - Automatic backups before retraining, easy restore
 - 📦 **Multiple formats** - LoRA, merged safetensors, GGUF quantizations
 - 🔧 **Single config file** - Everything controlled via `.env`
 - 🤖 **Auto-detection** - Chat templates, dataset formats, and model types detected automatically
@@ -220,7 +223,8 @@ python scripts/build.py
 **Output:**
 - `merged_16bit/` - Complete merged model (size varies by model)
 - `gguf/` - GGUF quantized versions (if `OUTPUT_FORMATS` set)
-  - `model.Q4_K_M.gguf` - 4-bit quantization (typically 50-60% of original size)
+  - `{model-name}-Q4_K_M.gguf` - 4-bit quantization (typically 50-60% of original size)
+  - Follows HuggingFace naming convention for easy uploading
 
 ### 5. Use Your Model
 
@@ -241,6 +245,28 @@ tokenizer = AutoTokenizer.from_pretrained(model_path)
 ```
 
 **Quality Note:** By default, merging uses the 4-bit training base. For true 16-bit quality, set `INFERENCE_BASE_MODEL` to the original unquantized model in `.env` (requires 20-30GB VRAM during build).
+
+### 6. Benchmark (Optional)
+
+Validate your fine-tuned model's performance:
+
+```bash
+python scripts/benchmark.py
+```
+
+This compares your model against the base model on standard tasks like instruction-following (IFEval). Useful for understanding which datasets work well with which models. See [docs/BENCHMARK.md](docs/BENCHMARK.md) for details.
+
+### 7. Publish (Optional)
+
+Share your model on HuggingFace Hub:
+
+```bash
+python scripts/push.py
+```
+
+The script handles uploading LoRA adapters, merged models, and GGUF files. Requires `HF_USERNAME` and `HF_TOKEN` in `.env`.
+
+Alternatively, upload manually from `outputs/{model-name}/` - all formats include auto-generated README files.
 
 ## 📋 Requirements
 
@@ -332,11 +358,13 @@ The pipeline automatically detects and configures many settings for you:
 - Gated datasets (prompts for HuggingFace login)
 
 **Smart Recommendations**
-Running `python scripts/preprocess.py` analyzes your dataset and recommends:
-- Optimal `BATCH_SIZE` based on GPU memory
-- Recommended `MAX_STEPS` for 1-3 epochs
-- Sequence length statistics
-- Dataset compatibility warnings
+Running `python scripts/preprocess.py` analyzes your dataset and provides intelligent recommendations:
+- **Optimal hyperparameters** - LoRA rank, alpha, learning rate based on dataset size/quality
+- **Epoch strategy** - 3 epochs for high-quality curated data, 1 epoch for large/noisy datasets
+- **"Go big first" approach** - Recommends optimal performance settings, with fallback options if VRAM limited
+- **Batch size optimization** - Based on GPU memory and training efficiency
+- **Sequence length analysis** - Statistics and filtering recommendations
+- **Dataset quality detection** - Automatically identifies high-quality vs synthetic datasets
 
 ### Dataset Tips
 
@@ -350,10 +378,11 @@ See [docs/TRAINING.md](docs/TRAINING.md) for detailed dataset guidance.
 
 ## 📚 Documentation
 
+- **[Understanding Fine-Tuning](docs/UNDERSTANDING_FINETUNING.md)** - **Start here!** Learn what fine-tuning achieves, when benchmarks matter, and how to define success
 - [Installation Guide](docs/INSTALLATION.md) - Detailed local setup instructions
 - [Configuration Guide](docs/CONFIGURATION.md) - .env options explained
 - [Training Guide](docs/TRAINING.md) - Training tips and troubleshooting
-- [Distribution Guide](docs/DISTRIBUTION.md) - Sharing models on HuggingFace
+- [Benchmarking Guide](docs/BENCHMARK.md) - Optional validation and testing
 - [FAQ](docs/FAQ.md) - Common questions and solutions
 
 ## ☁️ Google Colab Setup
@@ -614,18 +643,26 @@ See [Configuration Guide](docs/CONFIGURATION.md) for all options.
 
 ```
 outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/  # Auto-generated: {model}-{dataset}
-├── lora/              # LoRA adapters (~50-100MB)
+├── lora/              # Current LoRA adapters (~50-100MB)
 │   ├── adapter_model.safetensors
 │   ├── adapter_config.json
+│   ├── training_metrics.json
 │   └── tokenizer files
+├── lora_bak/          # Automatic backups of previous trainings
+│   └── 20251123_202255_rank32_lr0.0003_loss1.4846/
+│       └── (same files as lora/)
 ├── merged_16bit/      # Full merged model (~5GB)
 │   ├── model-*.safetensors
 │   ├── Modelfile
 │   └── tokenizer files
-└── gguf/              # GGUF quantizations
-    ├── model.Q4_K_M.gguf   (~1.5GB)
-    ├── model.Q5_K_M.gguf   (~1.8GB)
-    └── tokenizer files
+├── gguf/              # GGUF quantizations
+│   ├── {model-name}-Q4_K_M.gguf   (~1.5GB)
+│   ├── {model-name}-Q5_K_M.gguf   (~1.8GB)
+│   └── tokenizer files
+└── benchmarks/        # Benchmark results (optional)
+    ├── benchmark.json
+    ├── base/lm-eval/
+    └── fine-tuned/{timestamp}/lm-eval/
 ```
 
 **Note:** Output directory name is controlled by `OUTPUT_MODEL_NAME` in `.env`. Set to `auto` for automatic naming or provide a custom name (e.g., `my-chatbot-v1`).

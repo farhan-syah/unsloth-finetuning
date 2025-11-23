@@ -214,7 +214,7 @@ tokenizer = AutoTokenizer.from_pretrained("outputs/Qwen3-4B/merged_16bit")
 ```bash
 cd outputs/Qwen3-4B/gguf
 cat > Modelfile <<EOF
-FROM ./model.Q4_K_M.gguf
+FROM ./Qwen3-4B-Q4_K_M.gguf
 EOF
 ollama create my-model -f Modelfile
 ollama run my-model "Hello!"
@@ -222,7 +222,7 @@ ollama run my-model "Hello!"
 
 **With llama.cpp:**
 ```bash
-llama-cli -m outputs/Qwen3-4B/gguf/model.Q4_K_M.gguf -p "Hello"
+llama-cli -m outputs/Qwen3-4B/gguf/Qwen3-4B-Q4_K_M.gguf -p "Hello"
 ```
 
 ## Datasets
@@ -287,9 +287,8 @@ Multiple quantizations run sequentially, so `gguf_q4_k_m,gguf_q5_k_m,gguf_q8_0` 
 
 ### Q: How do I share my model?
 
-See [Distribution Guide](DISTRIBUTION.md) for detailed instructions.
+Use the push script to upload to HuggingFace:
 
-Quick:
 ```bash
 HF_USERNAME=your-username
 HF_TOKEN=your-token
@@ -362,11 +361,11 @@ base = AutoModelForCausalLM.from_pretrained("unsloth/Qwen3-4B-unsloth-bnb-4bit")
 model = PeftModel.from_pretrained(base, "outputs/Qwen3-4B/lora")
 ```
 
-### Q: Can I continue training from LoRA adapters?
+### Q: Can I retrain with different parameters?
 
-Yes, just run `train.py` again. It will load existing adapters and continue training (if `FORCE_RETRAIN=false`).
+Yes! Just run `train.py` again. The system automatically backs up your existing LoRA adapters to `lora_bak/{timestamp}_rank{X}_lr{Y}_loss{Z}/` before training with new parameters.
 
-For explicit continuation, set paths in train.py.
+To restore a previous version, use: `python scripts/restore_trained_data.py`
 
 ### Q: How do I merge multiple LoRA adapters?
 
@@ -426,4 +425,4 @@ See main README's Contributing section. Pull requests welcome!
 - [Configuration Guide](CONFIGURATION.md) - All settings explained
 - [Training Guide](TRAINING.md) - Training tips and best practices
 - [Installation Guide](INSTALLATION.md) - Detailed setup instructions
-- [Distribution Guide](DISTRIBUTION.md) - Sharing your models
+- [Benchmarking Guide](BENCHMARK.md) - Optional validation and testing

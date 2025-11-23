@@ -34,6 +34,32 @@ def get_bool_env(key, default=False):
 def get_int_env(key, default):
     return int(os.getenv(key, str(default)))
 
+def save_tokenizer_with_template(tokenizer, output_dir, token=False):
+    """
+    Save tokenizer and preserve chat_template in tokenizer_config.json.
+
+    Fixes issue where tokenizer.save_pretrained() doesn't always preserve
+    the chat_template attribute in the config file, causing benchmarks to fail.
+    """
+    # Save tokenizer normally
+    tokenizer.save_pretrained(output_dir, token=token)
+
+    # Ensure chat_template is in tokenizer_config.json
+    if hasattr(tokenizer, 'chat_template') and tokenizer.chat_template:
+        config_path = os.path.join(output_dir, "tokenizer_config.json")
+
+        # Load existing config
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+
+        # Add chat_template if missing
+        if 'chat_template' not in config:
+            config['chat_template'] = tokenizer.chat_template
+
+            # Save updated config
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+
 # Configuration
 LORA_BASE_MODEL = os.getenv("LORA_BASE_MODEL", "unsloth/Qwen3-1.7B-unsloth-bnb-4bit")
 INFERENCE_BASE_MODEL = os.getenv("INFERENCE_BASE_MODEL", "")  # Optional - for true 16-bit quality
@@ -42,6 +68,12 @@ MAX_SEQ_LENGTH = get_int_env("MAX_SEQ_LENGTH", 2048)
 OUTPUT_FORMATS = os.getenv("OUTPUT_FORMATS", "").split(",")
 OUTPUT_FORMATS = [fmt.strip() for fmt in OUTPUT_FORMATS if fmt.strip()]
 FORCE_REBUILD = get_bool_env("FORCE_REBUILD", False)
+CACHE_DIR = os.getenv("CACHE_DIR", "./cache")
+
+# Set HuggingFace cache to project directory for consistency
+os.environ["HF_HOME"] = CACHE_DIR
+os.environ["TRANSFORMERS_CACHE"] = os.path.join(CACHE_DIR, "transformers")
+os.environ["HF_HUB_CACHE"] = os.path.join(CACHE_DIR, "hub")
 
 PUSH_TO_HUB = get_bool_env("PUSH_TO_HUB", False)
 HF_USERNAME = os.getenv("HF_USERNAME", "")
@@ -203,7 +235,7 @@ else:
     os.makedirs(MERGED_16BIT_DIR, exist_ok=True)
     # Save with token=False to use local cache only
     model.save_pretrained(MERGED_16BIT_DIR, token=False)
-    tokenizer.save_pretrained(MERGED_16BIT_DIR, token=False)
+    save_tokenizer_with_template(tokenizer, MERGED_16BIT_DIR, token=False)
     print(f"✅ Merged model saved!")
 
     # Create Modelfile for Ollama

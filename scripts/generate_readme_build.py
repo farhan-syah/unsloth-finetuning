@@ -127,9 +127,322 @@ if os.path.exists(chat_template_json_path):
     except Exception as e:
         print(f"⚠️  Could not load chat template: {e}")
 
+# Load benchmark results if available
+benchmark_results = None
+
+# Try new location first: benchmarks/benchmark.json
+new_benchmark_path = os.path.join(OUTPUT_DIR, "benchmarks", "benchmark.json")
+old_benchmark_path = os.path.join(OUTPUT_DIR, "benchmark.json")
+
+if os.path.exists(new_benchmark_path):
+    try:
+        print(f"\n📊 Loading benchmark results from {new_benchmark_path}...")
+        with open(new_benchmark_path) as f:
+            benchmark_results = json.load(f)
+            print(f"✅ Benchmark results loaded (new format)")
+    except Exception as e:
+        print(f"⚠️  Could not load benchmark results: {e}")
+elif os.path.exists(old_benchmark_path):
+    try:
+        print(f"\n📊 Loading benchmark results from {old_benchmark_path} (legacy)...")
+        with open(old_benchmark_path) as f:
+            benchmark_results = json.load(f)
+            print(f"✅ Benchmark results loaded (legacy format)")
+    except Exception as e:
+        print(f"⚠️  Could not load benchmark results: {e}")
+
 # Parse model and dataset names
 dataset_short_name = DATASET_NAME.split("/")[-1].lower().replace("_", "-")
 dataset_author = DATASET_NAME.split("/")[0] if "/" in DATASET_NAME else "Unknown"
+
+# Helper function to generate benchmark results section
+def generate_benchmark_section(benchmark_data, format_type="markdown"):
+    """
+    Generate a formatted benchmark results section from benchmark.json data
+
+    Args:
+        benchmark_data: Loaded benchmark.json data
+        format_type: "markdown" or "table"
+
+    Returns:
+        Formatted markdown string with benchmark results
+    """
+    if not benchmark_data:
+        return ""
+
+    # Normalize data structure (handle both old and new formats)
+    base_model_data = benchmark_data.get("base_model", {})
+    ft_model_data = benchmark_data.get("fine_tuned_model", {})
+
+    # Check if new format (base_model.results) or old format (base_model.huggingface.scores)
+    is_new_format = "results" in base_model_data if base_model_data else False
+
+    # Convert new format to old format structure for compatibility
+    if is_new_format:
+        # New format: base_model.results.ifeval -> convert to base_model.huggingface.scores.ifeval
+        base_results = base_model_data.get("results", {})
+        ft_results = ft_model_data.get("results", {})
+
+        # Normalize metric names (remove ,none suffix)
+        def normalize_metrics(task_metrics):
+            normalized = {}
+            for key, value in task_metrics.items():
+                # Skip non-numeric fields like "alias"
+                if not isinstance(value, (int, float)):
+                    continue
+                clean_key = key.replace(",none", "").replace("_stderr", "")
+                if not key.endswith("_stderr,none"):  # Skip stderr for primary metrics
+                    normalized[clean_key] = value
+            return normalized
+
+        # Convert to old structure
+        base_model_data = {
+            "huggingface": {
+                task: normalize_metrics(metrics)
+                for task, metrics in base_results.items()
+            }
+        }
+        ft_model_data = {
+            "huggingface": {
+                task: normalize_metrics(metrics)
+                for task, metrics in ft_results.items()
+            }
+        }
+        has_comparison = bool(base_results and ft_results)
+    else:
+        # Old format: check if comparison mode
+        has_comparison = benchmark_data.get("comparison_mode", False)
+
+        # Fallback to legacy format
+        if not ft_model_data and "backends" in benchmark_data:
+            ft_model_data = benchmark_data["backends"]
+
+    if not ft_model_data:
+        return ""
+
+    section = "\n## Benchmark Results\n\n"
+
+    # Add timestamp
+    timestamp = benchmark_data.get("timestamp", "Unknown")
+    if timestamp != "Unknown":
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(timestamp)
+            timestamp = dt.strftime("%Y-%m-%d %H:%M")
+        except:
+            pass
+
+    section += f"**Evaluated:** {timestamp}\n"
+
+    if has_comparison and benchmark_data.get("base_model_name"):
+        section += f"**Comparison:** Fine-tuned vs Base model\n"
+
+    section += "\n"
+
+    # All benchmark metadata with clearer names
+    all_benchmarks = {
+        "ifeval": {
+            "name": "IFEval",
+            "description": "Instruction-following with verifiable constraints",
+            "what_it_tests": "Tests ability to follow specific instructions"
+        },
+        "gsm8k": {
+            "name": "GSM8K",
+            "description": "Grade school math problems (8-shot)",
+            "what_it_tests": "Tests math reasoning and chain-of-thought"
+        },
+        "hellaswag": {
+            "name": "HellaSwag",
+            "description": "Commonsense reasoning about everyday situations",
+            "what_it_tests": "Tests real-world knowledge and common sense"
+        },
+        "mmlu": {
+            "name": "MMLU",
+            "description": "Multi-task knowledge across 57 subjects",
+            "what_it_tests": "Tests broad knowledge retention (detects catastrophic forgetting)"
+        },
+        "truthfulqa_mc": {
+            "name": "TruthfulQA",
+            "description": "Truthfulness in question answering",
+            "what_it_tests": "Tests tendency to generate truthful answers"
+        }
+    }
+
+    # Process each backend
+    for backend, ft_scores in ft_model_data.items():
+        # More user-friendly backend names
+        backend_display = {
+            "huggingface": "HuggingFace Transformers (16-bit merged model)",
+            "ollama": "Ollama (GGUF quantized model)"
+        }.get(backend, backend.upper())
+
+        section += f"### {backend_display}\n\n"
+
+        if has_comparison and backend in base_model_data:
+            base_scores = base_model_data[backend]
+
+            # 1. Show IFEval detailed table if tested
+            if "ifeval" in ft_scores and "prompt_level_strict_acc" in ft_scores.get("ifeval", {}):
+                section += "#### IFEval (Instruction Following)\n\n"
+                section += "| Model | Strict Prompt | Strict Inst | Loose Prompt | Loose Inst |\n"
+                section += "|-------|---------------|-------------|--------------|------------|\n"
+
+                ifeval_ft = ft_scores["ifeval"]
+                ifeval_base = base_scores.get("ifeval", {})
+
+                # Base model scores
+                base_strict_prompt = ifeval_base.get("prompt_level_strict_acc", 0)
+                base_strict_inst = ifeval_base.get("inst_level_strict_acc", 0)
+                base_loose_prompt = ifeval_base.get("prompt_level_loose_acc", 0)
+                base_loose_inst = ifeval_base.get("inst_level_loose_acc", 0)
+
+                # Fine-tuned model scores
+                ft_strict_prompt = ifeval_ft.get("prompt_level_strict_acc", 0)
+                ft_strict_inst = ifeval_ft.get("inst_level_strict_acc", 0)
+                ft_loose_prompt = ifeval_ft.get("prompt_level_loose_acc", 0)
+                ft_loose_inst = ifeval_ft.get("inst_level_loose_acc", 0)
+
+                section += f"| Base | {base_strict_prompt:.4f} | {base_strict_inst:.4f} | {base_loose_prompt:.4f} | {base_loose_inst:.4f} |\n"
+                section += f"| Fine-tuned | {ft_strict_prompt:.4f} | {ft_strict_inst:.4f} | {ft_loose_prompt:.4f} | {ft_loose_inst:.4f} |\n"
+
+                # Calculate improvements
+                delta_strict_prompt = ft_strict_prompt - base_strict_prompt
+                delta_strict_inst = ft_strict_inst - base_strict_inst
+                delta_loose_prompt = ft_loose_prompt - base_loose_prompt
+                delta_loose_inst = ft_loose_inst - base_loose_inst
+
+                def format_delta(delta):
+                    if delta > 0:
+                        return f"↗ +{delta:.4f}"
+                    elif delta < 0:
+                        return f"↘ {delta:.4f}"
+                    else:
+                        return "→ 0.0000"
+
+                section += f"| Δ | {format_delta(delta_strict_prompt)} | {format_delta(delta_strict_inst)} | {format_delta(delta_loose_prompt)} | {format_delta(delta_loose_inst)} |\n\n"
+
+            # 2. Show other benchmarks if tested (excluding IFEval)
+            other_benchmarks_tested = [task for task in ft_scores.keys() if task != "ifeval"]
+
+            if other_benchmarks_tested:
+                section += "#### Other Benchmarks\n\n"
+                section += "| Benchmark | Base | Fine-tuned | Δ |\n"
+                section += "|-----------|------|------------|---|\n"
+
+                for task_id in other_benchmarks_tested:
+                    task_meta = all_benchmarks.get(task_id, {"name": task_id, "what_it_tests": ""})
+                    task_name = task_meta["name"]
+                    ft_metrics = ft_scores[task_id]
+
+                    # Get primary metrics
+                    if "accuracy" in ft_metrics:
+                        ft_score = ft_metrics["accuracy"]
+                        base_score = base_scores.get(task_id, {}).get("accuracy", 0)
+                    elif "exact_match" in ft_metrics:
+                        ft_score = ft_metrics["exact_match"]
+                        base_score = base_scores.get(task_id, {}).get("exact_match", 0)
+                    else:
+                        ft_score = list(ft_metrics.values())[0] if ft_metrics else 0
+                        base_score = 0
+
+                    delta = ft_score - base_score
+
+                    # Format delta
+                    if delta > 0:
+                        delta_str = f"↗ +{delta:.4f}"
+                    elif delta < 0:
+                        delta_str = f"↘ {delta:.4f}"
+                    else:
+                        delta_str = "→ 0.0000"
+
+                    section += f"| {task_name} | {base_score:.4f} | {ft_score:.4f} | {delta_str} |\n"
+
+                section += "\n"
+
+            # 3. Summary table
+            section += "#### Summary\n\n"
+            section += "| Benchmark | What It Tests | Base | Fine-tuned | Improvement |\n"
+            section += "|-----------|---------------|------|------------|-------------|\n"
+
+            # Show all benchmarks in summary
+            for task_id, task_meta in all_benchmarks.items():
+                task_name = task_meta["name"]
+                what_tests = task_meta["what_it_tests"]
+
+                # Check if this task was tested
+                if task_id in ft_scores:
+                    ft_metrics = ft_scores[task_id]
+                    base_metrics = base_scores.get(task_id, {})
+
+                    # Get primary metrics (try multiple possible names)
+                    metric_priority = ["prompt_level_strict_acc", "inst_level_strict_acc", "accuracy", "exact_match", "acc"]
+
+                    ft_score = 0
+                    base_score = 0
+                    for metric_name in metric_priority:
+                        if metric_name in ft_metrics:
+                            ft_score = ft_metrics[metric_name]
+                            base_score = base_metrics.get(metric_name, 0)
+                            break
+
+                    # Fallback to first numeric value if none of the priority metrics found
+                    if ft_score == 0 and ft_metrics:
+                        ft_score = next((v for v in ft_metrics.values() if isinstance(v, (int, float))), 0)
+
+                    delta = ft_score - base_score
+                    delta_pct = (delta / base_score * 100) if base_score > 0 else 0
+
+                    # Format delta with emoji
+                    if delta > 0:
+                        delta_str = f"↗ +{delta:.2%} ({delta_pct:+.1f}%)"
+                    elif delta < 0:
+                        delta_str = f"↘ {delta:.2%} ({delta_pct:.1f}%)"
+                    else:
+                        delta_str = "→ No change"
+
+                    section += f"| **{task_name}** | {what_tests} | {base_score:.2%} | {ft_score:.2%} | {delta_str} |\n"
+                else:
+                    # Not tested - show dashes
+                    section += f"| **{task_name}** | {what_tests} | - | - | - |\n"
+
+        else:
+            # No comparison - show all benchmarks with "-" for not tested
+            section += "| Benchmark | What It Tests | Score |\n"
+            section += "|-----------|---------------|-------|\n"
+
+            # Show all benchmarks, not just tested ones
+            for task_id, task_meta in all_benchmarks.items():
+                task_name = task_meta["name"]
+                what_tests = task_meta["what_it_tests"]
+
+                # Check if this task was tested
+                if task_id in ft_scores:
+                    metrics = ft_scores[task_id]
+
+                    # Get primary metric
+                    if "accuracy" in metrics:
+                        score = metrics["accuracy"]
+                    elif "exact_match" in metrics:
+                        score = metrics["exact_match"]
+                    else:
+                        score = list(metrics.values())[0] if metrics else 0
+
+                    section += f"| **{task_name}** | {what_tests} | {score:.2%} |\n"
+                else:
+                    # Not tested - show dash
+                    section += f"| **{task_name}** | {what_tests} | - |\n"
+
+        section += "\n"
+
+    # Add warnings if any
+    warnings = benchmark_data.get("warnings", [])
+    if warnings:
+        section += "### ⚠️ Warnings\n\n"
+        for warning in warnings:
+            section += f"- {warning}\n"
+        section += "\n"
+
+    return section
 
 # Helper function to get training scope description
 def get_training_scope():
@@ -260,7 +573,13 @@ lora_readme += f"""
 - **Training Steps**: {total_steps if total_steps != "Unknown" else "Unknown"}
 - **Dataset Samples**: {samples_trained if samples_trained != "Unknown" else "See dataset"}
 - **Training Scope**: {get_training_scope()}
+"""
 
+# Add benchmark results if available
+if benchmark_results:
+    lora_readme += generate_benchmark_section(benchmark_results)
+
+lora_readme += f"""
 ## Usage
 
 ### Load with Transformers + PEFT
@@ -488,7 +807,13 @@ ollama run {output_model_name.lower()} "Hello!"
 - **Training Scope**: {get_training_scope()}
 
 For complete training configuration, see the LoRA directory.
+"""
 
+# Add benchmark results if available
+if benchmark_results:
+    main_readme += generate_benchmark_section(benchmark_results)
+
+main_readme += f"""
 ## Building Additional Formats
 
 To create other formats from LoRA adapters:
@@ -634,8 +959,15 @@ inputs = tokenizer.apply_chat_template(messages, tokenize=True, return_tensors="
 - **Training Scope**: {get_training_scope()}
 
 For complete training configuration, see the LoRA adapters repository/directory.
-
 """
+
+    # Add benchmark results if available
+    # Only add benchmarks for merged formats (not GGUF)
+    # GGUF is quantized from merged, so can't compare with base model directly
+    if benchmark_results and "merged" in format_name:
+        readme += generate_benchmark_section(benchmark_results)
+
+    readme += "\n"
 
     if "merged" in format_name:
         readme += f"""## Usage

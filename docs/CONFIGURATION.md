@@ -116,9 +116,10 @@ FORCE_PREPROCESS=false    # Set true to reprocess dataset (ignores cache)
 ## Training Control Flags
 
 ```bash
-FORCE_RETRAIN=false   # Set true to retrain even if LoRA adapters exist
 FORCE_REBUILD=false   # Set true to rebuild formats even if they exist
 ```
+
+**Note:** Training now automatically backs up existing LoRA adapters to `lora_bak/` before retraining. Use `python scripts/restore_trained_data.py` to restore previous versions.
 
 ## Output Formats
 

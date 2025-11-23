@@ -75,6 +75,7 @@ def cleanup_lora_directory(lora_dir, verbose=True):
         "adapter_config.json",       # LoRA adapter configuration
         "adapter_model.safetensors", # LoRA weights
         "training_metrics.json",     # Training stats
+        "loss_history.csv",          # Training loss history
         "trainer_state.json",        # Trainer state (for README generation)
         "README.md",                 # Documentation
         "*.md"                       # Keep any markdown files

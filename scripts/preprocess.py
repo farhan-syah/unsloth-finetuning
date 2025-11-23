@@ -54,11 +54,16 @@ OUTPUT_MODEL_NAME = os.getenv("OUTPUT_MODEL_NAME", "auto")
 FORCE_PREPROCESS = get_bool_env("FORCE_PREPROCESS", False)
 CHECK_SEQ_LENGTH = get_bool_env("CHECK_SEQ_LENGTH", True)  # Default true for analysis
 
+# Set HuggingFace cache to project directory for consistency
+os.environ["HF_HOME"] = CACHE_DIR
+os.environ["TRANSFORMERS_CACHE"] = os.path.join(CACHE_DIR, "transformers")
+os.environ["HF_HUB_CACHE"] = os.path.join(CACHE_DIR, "hub")
+
 # Current training config (for comparison)
 CURRENT_BATCH_SIZE = get_int_env("BATCH_SIZE", 2)
 CURRENT_GRAD_ACCUM = get_int_env("GRADIENT_ACCUMULATION_STEPS", 4)
 CURRENT_MAX_STEPS = get_int_env("MAX_STEPS", 0)
-CURRENT_NUM_EPOCHS = get_int_env("NUM_TRAIN_EPOCHS", 1)
+CURRENT_NUM_EPOCHS = get_float_env("NUM_TRAIN_EPOCHS", 1)  # Allow fractional epochs
 
 # Generate names
 dataset_short_name = DATASET_NAME.split("/")[-1].lower().replace("_", "-")
@@ -684,78 +689,119 @@ else:
     print(f"   → {current_steps_per_epoch} steps/epoch × {CURRENT_NUM_EPOCHS} epochs = {current_total_steps} total steps")
 
 # ============================================
-# Recommendation Logic
+# Recommendation Logic - Top-Down Strategy
 # ============================================
 print(f"\n" + "-"*70)
-print("🎯 RECOMMENDED CONFIGURATION")
+print("🎯 RECOMMENDED CONFIGURATION (Go Big First)")
 print("-"*70)
 
-# Target: 1-3 epochs (prefer 1-2 for most cases)
-TARGET_MIN_EPOCHS = 1
-TARGET_MAX_EPOCHS = 3
-IDEAL_EPOCHS = 1  # Most models benefit from 1 full pass
+# Step 1: Detect dataset quality (heuristic-based)
+KNOWN_HIGH_QUALITY = ["GAIR/lima", "databricks/databricks-dolly-15k"]
+is_high_quality = any(ds in DATASET_NAME for ds in KNOWN_HIGH_QUALITY)
 
-# Recommended effective batch size based on dataset size
-if final_dataset_size < 500:
-    recommended_effective_batch = 4  # Small dataset, small batches
-elif final_dataset_size < 2000:
-    recommended_effective_batch = 8
-elif final_dataset_size < 10000:
-    recommended_effective_batch = 16
+# Analyze average text length as quality proxy (if available)
+if dataset_metadata.get('avg_length') != "not_checked":
+    avg_token_length = dataset_metadata.get('avg_length', 0)
+    if avg_token_length > 800:  # Longer, detailed responses suggest higher quality
+        is_high_quality = True
+
+# Step 2: Determine epochs based on quality
+if is_high_quality:
+    target_epochs = 3  # High quality: safe to train longer
+    quality_note = "High quality curated data detected → Safe for 3 epochs"
 else:
-    recommended_effective_batch = 32  # Large dataset, larger batches
+    target_epochs = 1  # Lower quality/synthetic: one pass only
+    quality_note = "Large/synthetic data → 1 epoch to avoid memorizing noise"
 
-# Adjust based on available VRAM
-if gpu_available and available_vram < 4:
-    # Low VRAM: use smaller batch size with more accumulation
-    recommended_batch_size = 1
-    recommended_grad_accum = recommended_effective_batch
-elif gpu_available and available_vram < 8:
-    # Medium VRAM
+# Step 3: Determine LoRA configuration (Go Big First!)
+if final_dataset_size < 5000:
+    # Small dataset: Need strong signal
+    recommended_lora_rank = 64
+    recommended_lora_alpha = 128  # 2× rank (aggressive)
+    recommended_lr = "3e-4"  # Higher LR for small data
+    rank_note = "Small dataset → High rank + aggressive LR for strong learning"
+elif final_dataset_size < 20000:
+    # Medium dataset
+    recommended_lora_rank = 32
+    recommended_lora_alpha = 64
+    recommended_lr = "2e-4"
+    rank_note = "Medium dataset → Balanced configuration"
+else:
+    # Large dataset
+    recommended_lora_rank = 16
+    recommended_lora_alpha = 32
+    recommended_lr = "2e-4"
+    rank_note = "Large dataset → Standard LoRA configuration"
+
+# Step 4: Batch size (start with 8, adjust for VRAM)
+recommended_effective_batch = 8  # Good default for most cases
+if gpu_available and available_vram < 8:
+    # Low VRAM: smaller batch, more accumulation
     recommended_batch_size = 2
-    recommended_grad_accum = recommended_effective_batch // 2
-else:
-    # High VRAM or CPU
+    recommended_grad_accum = 4
+elif gpu_available and available_vram < 12:
+    # Medium VRAM
     recommended_batch_size = 4
-    recommended_grad_accum = recommended_effective_batch // 4
+    recommended_grad_accum = 2
+else:
+    # High VRAM
+    recommended_batch_size = 4
+    recommended_grad_accum = 2
 
-# Ensure minimum grad_accum of 1
-recommended_grad_accum = max(1, recommended_grad_accum)
-
-# Calculate steps for target epochs
+# Calculate training steps
 steps_per_epoch = math.ceil(final_dataset_size / recommended_effective_batch)
-recommended_max_steps_1_epoch = steps_per_epoch
-recommended_max_steps_2_epochs = steps_per_epoch * 2
-recommended_max_steps_3_epochs = steps_per_epoch * 3
+recommended_max_steps = steps_per_epoch * target_epochs
 
-print(f"\n📊 Why limit to 1-3 epochs?")
-print(f"   • Modern LLMs with LoRA typically need only 1-2 full passes through data")
-print(f"   • More epochs often lead to overfitting (model memorizes instead of learns)")
-print(f"   • For {final_dataset_size} samples, 1 epoch = {steps_per_epoch} training steps")
-print(f"   • If loss plateaus early, you can stop training (no need to complete epoch)")
+print(f"\n📊 Dataset Analysis:")
+print(f"   Size: {final_dataset_size} samples")
+print(f"   Quality: {'HIGH (curated/detailed)' if is_high_quality else 'STANDARD (large-scale)'}")
+avg_len_display = dataset_metadata.get('avg_length', 'unknown')
+if avg_len_display != "not_checked":
+    print(f"   Avg length: {avg_len_display:.0f} tokens")
+else:
+    print(f"   Avg length: {avg_len_display}")
+print(f"   → {quality_note}")
 
-print(f"\n💡 Recommended Settings for .env:")
+print(f"\n🚀 OPTIMAL CONFIGURATION (Maximum Performance):")
+print(f"   LORA_RANK={recommended_lora_rank}")
+print(f"   LORA_ALPHA={recommended_lora_alpha}")
+print(f"   LEARNING_RATE={recommended_lr}")
+print(f"   NUM_TRAIN_EPOCHS={target_epochs}")
 print(f"   BATCH_SIZE={recommended_batch_size}")
 print(f"   GRADIENT_ACCUMULATION_STEPS={recommended_grad_accum}")
-print(f"   # Effective batch size: {recommended_effective_batch}")
+print(f"   MAX_STEPS={recommended_max_steps}  # {target_epochs} epoch(s)")
 
-print(f"\n   # Choose ONE of these MAX_STEPS options:")
-print(f"   MAX_STEPS={recommended_max_steps_1_epoch}  # 1 epoch (recommended)")
-print(f"   # MAX_STEPS={recommended_max_steps_2_epochs}  # 2 epochs (if 1 epoch underfits)")
-print(f"   # MAX_STEPS={recommended_max_steps_3_epochs}  # 3 epochs (maximum recommended)")
-print(f"   # MAX_STEPS=0  # Use NUM_TRAIN_EPOCHS instead (less precise)")
+vram_estimate = 6 + (recommended_lora_rank / 16) * 2  # Rough estimate
+print(f"\n⚙️  Estimated VRAM: ~{vram_estimate:.0f}GB")
+if gpu_available:
+    print(f"   Your GPU: {available_vram:.1f}GB available")
 
-print(f"\n   NUM_TRAIN_EPOCHS=1  # Only used if MAX_STEPS=0")
+# Provide fallback options if VRAM limited
+if gpu_available and available_vram < vram_estimate:
+    print(f"\n⚠️  VRAM MAY BE INSUFFICIENT")
+    print(f"\n💡 If you encounter OOM errors, try these (in order):")
+    print(f"\n   Option 1 - Reduce Batch Size:")
+    print(f"      BATCH_SIZE=2")
+    print(f"      GRADIENT_ACCUMULATION_STEPS=4")
+    print(f"\n   Option 2 - Reduce LoRA Rank:")
+    print(f"      LORA_RANK={recommended_lora_rank // 2}")
+    print(f"      LORA_ALPHA={recommended_lora_alpha // 2}")
+    print(f"\n   Option 3 - Reduce Alpha First (if overfitting):")
+    print(f"      LORA_ALPHA={recommended_lora_rank}  # 1:1 ratio instead of 2:1")
+    print(f"\n   Option 4 - Both:")
+    print(f"      LORA_RANK={recommended_lora_rank // 2}, BATCH_SIZE=2")
 
-# Explain the reasoning
-print(f"\n📖 Explanation:")
-print(f"   Dataset: {final_dataset_size} samples")
-print(f"   Effective Batch: {recommended_effective_batch} samples/step")
-print(f"   Steps per epoch: {steps_per_epoch}")
-print(f"")
-print(f"   1 epoch  = {recommended_max_steps_1_epoch} steps × {recommended_effective_batch} samples = {recommended_max_steps_1_epoch * recommended_effective_batch} samples seen")
-print(f"   2 epochs = {recommended_max_steps_2_epochs} steps × {recommended_effective_batch} samples = {recommended_max_steps_2_epochs * recommended_effective_batch} samples seen")
-print(f"   3 epochs = {recommended_max_steps_3_epochs} steps × {recommended_effective_batch} samples = {recommended_max_steps_3_epochs * recommended_effective_batch} samples seen")
+print(f"\n📖 Strategy:")
+print(f"   {rank_note}")
+print(f"   • Start BIG: High rank + aggressive alpha (rank×2)")
+print(f"   • If overfitting: Reduce alpha first (2:1 → 1:1)")
+print(f"   • If still overfitting: Then reduce rank")
+print(f"   • If VRAM limited: Reduce batch size first, then rank")
+
+print(f"\n🎓 Training Plan:")
+print(f"   {steps_per_epoch} steps/epoch × {target_epochs} epoch(s) = {recommended_max_steps} total steps")
+print(f"   Samples seen: {recommended_max_steps * recommended_effective_batch}")
+print(f"   Expected time: ~{recommended_max_steps * 2 / 60:.0f}-{recommended_max_steps * 4 / 60:.0f} minutes")
 
 # VRAM-based recommendations
 if gpu_available:

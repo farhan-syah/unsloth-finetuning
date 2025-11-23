@@ -31,11 +31,16 @@ The first time you run `train.py`:
 
 ### Step 2: Training
 
-1. Loads model with 4-bit quantization
-2. Adds LoRA adapters
-3. Trains for specified epochs/steps
-4. Saves LoRA adapters
-5. Merges and saves full 16-bit model
+1. Checks for existing LoRA adapters
+   - If found: Automatically backs up to `lora_bak/{timestamp}_rank{X}_lr{Y}_loss{Z}/`
+   - Backup naming includes training parameters for easy identification
+2. Loads model with 4-bit quantization
+3. Adds LoRA adapters
+4. Trains for specified epochs/steps
+5. Saves LoRA adapters with training metrics
+6. Merges and saves full 16-bit model
+
+**Retraining:** You can safely retrain with different parameters - previous versions are automatically preserved. Use `python scripts/restore_trained_data.py` to restore any previous training.
 
 ### Step 3: Building (Optional)
 
@@ -352,4 +357,4 @@ Contains:
 
 - [Configuration Guide](CONFIGURATION.md) - All `.env` options
 - [FAQ](FAQ.md) - Common questions
-- [Distribution Guide](DISTRIBUTION.md) - Sharing your models
+- [Benchmarking Guide](BENCHMARK.md) - Optional validation and testing

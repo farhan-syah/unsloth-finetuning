@@ -170,7 +170,16 @@ echo ""
 echo "============================================================"
 echo "Installing additional dependencies"
 echo "============================================================"
+echo "Installing: datasets, huggingface_hub, accelerate, sentencepiece, protobuf, python-dotenv"
 python3 -m pip install datasets huggingface_hub accelerate sentencepiece protobuf python-dotenv
+
+echo ""
+echo "============================================================"
+echo "Installing benchmarking dependencies"
+echo "============================================================"
+echo "Installing: lm-eval and required task dependencies"
+echo "⚠️  This may take a few minutes..."
+python3 -m pip install lm-eval langdetect sacrebleu rouge-score scikit-learn immutabledict sqlitedict pycountry
 
 echo ""
 echo "============================================================"
@@ -185,6 +194,7 @@ python3 -c "import unsloth; print('✅ Unsloth: OK')" || echo "❌ Unsloth impor
 python3 -c "import transformers; print(f'✅ Transformers: {transformers.__version__}')" || echo "❌ Transformers import failed"
 python3 -c "import trl; print(f'✅ TRL: {trl.__version__}')" || echo "❌ TRL import failed"
 python3 -c "import peft; print(f'✅ PEFT: {peft.__version__}')" || echo "❌ PEFT import failed"
+python3 -c "import lm_eval; print('✅ lm-eval: OK (for benchmarking)')" || echo "⚠️  lm-eval not available (optional, needed for benchmarking)"
 
 echo ""
 echo "============================================================"

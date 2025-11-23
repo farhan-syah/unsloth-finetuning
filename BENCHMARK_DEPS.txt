@@ -1,0 +1,19 @@
+# Complete list of lm-eval benchmark dependencies
+# Install all at once with: pip install -r BENCHMARK_DEPS.txt
+
+# Core benchmarking
+lm-eval>=0.4.0
+
+# Task-specific dependencies
+langdetect       # IFEval (instruction-following)
+sacrebleu        # Translation benchmarks
+rouge-score      # Summarization benchmarks
+scikit-learn     # ML metrics
+
+# Internal dependencies
+immutabledict    # lm-eval data structures
+sqlitedict       # lm-eval caching
+pycountry        # Language detection
+
+# Optional but recommended
+requests         # Ollama backend support

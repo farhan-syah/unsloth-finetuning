@@ -51,6 +51,16 @@ sentencepiece>=0.2.0
 protobuf
 python-dotenv>=1.0.0
 
+# Benchmarking
+lm-eval>=0.4.0  # For model evaluation and benchmarking
+langdetect  # Required for IFEval benchmark
+sacrebleu  # Required for translation benchmarks
+rouge-score  # Required for summarization benchmarks
+scikit-learn  # Required for some benchmark metrics
+immutabledict  # Required for lm-eval internal operations
+sqlitedict  # Required for lm-eval caching
+pycountry  # Required for some language detection tasks
+
 # Optional: Weights & Biases for tracking
 # wandb>=0.16.0
 
