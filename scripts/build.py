@@ -3,18 +3,34 @@ Build/Convert LoRA adapters to various formats
 Handles: merged_16bit, merged_4bit, GGUF (various quants)
 
 Requires LoRA adapters from train.py first!
+Configure output formats in training_params.yaml
 """
 
 import os
 import json
 import shutil
+import argparse
 from pathlib import Path
-from dotenv import load_dotenv
-load_dotenv()
 
 from unsloth import FastLanguageModel
 from unsloth.save import create_ollama_modelfile
 from unsloth.ollama_template_mappers import MODEL_TO_OLLAMA_TEMPLATE_MAPPER
+
+# Load configuration
+from config_loader import get_config_for_script
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description="Build/convert LoRA adapters to various formats")
+parser.add_argument(
+    "--config",
+    type=str,
+    default=None,
+    help="Path to YAML config file (default: training_params.yaml)"
+)
+args = parser.parse_args()
+
+# Load configuration from YAML and .env
+config, env_config = get_config_for_script(args.config, verbose=False)
 
 # Helper functions
 def get_template_for_model(model_name):
@@ -26,13 +42,6 @@ def get_template_for_model(model_name):
     if model_name in MODEL_TO_OLLAMA_TEMPLATE_MAPPER:
         return MODEL_TO_OLLAMA_TEMPLATE_MAPPER[model_name]
     return None
-
-def get_bool_env(key, default=False):
-    val = os.getenv(key, str(default)).lower()
-    return val in ('true', '1', 'yes', 'on')
-
-def get_int_env(key, default):
-    return int(os.getenv(key, str(default)))
 
 def save_tokenizer_with_template(tokenizer, output_dir, token=False):
     """
@@ -60,28 +69,31 @@ def save_tokenizer_with_template(tokenizer, output_dir, token=False):
             with open(config_path, 'w') as f:
                 json.dump(config, f, indent=2)
 
-# Configuration
-LORA_BASE_MODEL = os.getenv("LORA_BASE_MODEL", "unsloth/Qwen3-1.7B-unsloth-bnb-4bit")
-INFERENCE_BASE_MODEL = os.getenv("INFERENCE_BASE_MODEL", "")  # Optional - for true 16-bit quality
-OUTPUT_MODEL_NAME = os.getenv("OUTPUT_MODEL_NAME", "auto")
-MAX_SEQ_LENGTH = get_int_env("MAX_SEQ_LENGTH", 2048)
-OUTPUT_FORMATS = os.getenv("OUTPUT_FORMATS", "").split(",")
-OUTPUT_FORMATS = [fmt.strip() for fmt in OUTPUT_FORMATS if fmt.strip()]
-FORCE_REBUILD = get_bool_env("FORCE_REBUILD", False)
-CACHE_DIR = os.getenv("CACHE_DIR", "./cache")
+# Model configuration from YAML config
+LORA_BASE_MODEL = config.model.base_model
+INFERENCE_BASE_MODEL = config.model.inference_model
+OUTPUT_MODEL_NAME = config.model.output_name
+
+# Training parameters from YAML config
+MAX_SEQ_LENGTH = config.training.data.max_seq_length
+OUTPUT_FORMATS = config.output.formats
+
+# Paths from .env config
+FORCE_REBUILD = env_config['force_rebuild']
+CACHE_DIR = env_config['cache_dir']
 
 # Set HuggingFace cache to project directory for consistency
 os.environ["HF_HOME"] = CACHE_DIR
 os.environ["TRANSFORMERS_CACHE"] = os.path.join(CACHE_DIR, "transformers")
 os.environ["HF_HUB_CACHE"] = os.path.join(CACHE_DIR, "hub")
 
-PUSH_TO_HUB = get_bool_env("PUSH_TO_HUB", False)
-HF_USERNAME = os.getenv("HF_USERNAME", "")
-HF_MODEL_NAME = os.getenv("HF_MODEL_NAME", "auto")
-HF_TOKEN = os.getenv("HF_TOKEN", "")
+PUSH_TO_HUB = env_config['push_to_hub']
+HF_USERNAME = env_config['hf_username']
+HF_MODEL_NAME = env_config['hf_model_name']
+HF_TOKEN = env_config['hf_token']
 
-# Generate output model name
-DATASET_NAME = os.getenv("DATASET_NAME", "yahma/alpaca-cleaned")
+# Generate output model name (dataset from YAML config)
+DATASET_NAME = config.dataset.name
 dataset_short_name = DATASET_NAME.split("/")[-1].lower().replace("_", "-")
 if OUTPUT_MODEL_NAME == "auto" or not OUTPUT_MODEL_NAME:
     # Auto-generate from base model + dataset
@@ -91,7 +103,7 @@ else:
     output_model_name = OUTPUT_MODEL_NAME
 
 # Auto-generate paths
-OUTPUT_DIR_BASE = os.getenv("OUTPUT_DIR_BASE", "./outputs")
+OUTPUT_DIR_BASE = env_config['output_dir_base']
 OUTPUT_DIR = os.path.join(OUTPUT_DIR_BASE, output_model_name)
 LORA_DIR = os.path.join(OUTPUT_DIR, "lora")
 

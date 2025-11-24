@@ -3,31 +3,34 @@ Fine-tune models using Unsloth with LoRA
 Handles ONLY training - creates LoRA adapters
 Use build.py to convert to merged/GGUF formats
 
-Configure your dataset and model in .env file
+Configure training parameters in training_params.yaml
+Configure model/dataset in .env file
 """
 
 import torch
 import os
 import json
+import argparse
 from unsloth import FastLanguageModel, is_bfloat16_supported
 from datasets import load_dataset
 from trl import SFTTrainer
 from transformers import TrainingArguments
 
-# Load environment variables from .env file
-from dotenv import load_dotenv
-load_dotenv()
+# Load configuration
+from config_loader import get_config_for_script
 
-# Helper functions
-def get_bool_env(key, default=False):
-    val = os.getenv(key, str(default)).lower()
-    return val in ('true', '1', 'yes', 'on')
+# Parse command line arguments
+parser = argparse.ArgumentParser(description="Fine-tune models using Unsloth with LoRA")
+parser.add_argument(
+    "--config",
+    type=str,
+    default=None,
+    help="Path to YAML config file (default: training_params.yaml)"
+)
+args = parser.parse_args()
 
-def get_int_env(key, default):
-    return int(os.getenv(key, str(default)))
-
-def get_float_env(key, default):
-    return float(os.getenv(key, str(default)))
+# Load configuration from YAML and .env
+config, env_config = get_config_for_script(args.config, verbose=True)
 
 def save_tokenizer_with_template(tokenizer, output_dir, token=False):
     """
@@ -55,17 +58,45 @@ def save_tokenizer_with_template(tokenizer, output_dir, token=False):
             with open(config_path, 'w') as f:
                 json.dump(config, f, indent=2)
 
-# Configuration from environment variables
-LORA_BASE_MODEL = os.getenv("LORA_BASE_MODEL", "unsloth/Qwen3-1.7B-unsloth-bnb-4bit")
-OUTPUT_MODEL_NAME = os.getenv("OUTPUT_MODEL_NAME", "auto")
-MAX_SEQ_LENGTH = get_int_env("MAX_SEQ_LENGTH", 2048)
-LORA_RANK = get_int_env("LORA_RANK", 64)
-LORA_ALPHA = get_int_env("LORA_ALPHA", 128)
-LORA_DROPOUT = get_float_env("LORA_DROPOUT", 0.0)
-USE_RSLORA = get_bool_env("USE_RSLORA", False)
-DATASET_NAME = os.getenv("DATASET_NAME", "yahma/alpaca-cleaned")
-DATASET_MAX_SAMPLES = get_int_env("DATASET_MAX_SAMPLES", 0)  # 0 = use all
-MAX_STEPS = get_int_env("MAX_STEPS", 0)  # 0 = use epochs
+# Model and dataset from YAML config
+LORA_BASE_MODEL = config.model.base_model
+INFERENCE_BASE_MODEL_CONFIG = config.model.inference_model
+DATASET_NAME = config.dataset.name
+DATASET_MAX_SAMPLES = config.dataset.max_samples
+OUTPUT_MODEL_NAME = config.model.output_name
+
+# Paths from .env config
+OUTPUT_DIR_BASE = env_config['output_dir_base']
+PREPROCESSED_DATA_DIR = env_config['preprocessed_data_dir']
+CACHE_DIR = env_config['cache_dir']
+
+# Training parameters from YAML config
+MAX_SEQ_LENGTH = config.training.data.max_seq_length
+LORA_RANK = config.training.lora.rank
+LORA_ALPHA = config.training.lora.alpha
+LORA_DROPOUT = config.training.lora.dropout
+USE_RSLORA = config.training.lora.use_rslora
+MAX_STEPS = config.training.epochs.max_steps
+BATCH_SIZE = config.training.batch.size
+GRADIENT_ACCUMULATION_STEPS = config.training.batch.gradient_accumulation_steps
+LEARNING_RATE = config.training.optimization.learning_rate
+NUM_TRAIN_EPOCHS = config.training.epochs.num_train_epochs
+WARMUP_RATIO = config.training.optimization.warmup_ratio
+WARMUP_STEPS = config.training.optimization.warmup_steps
+PACKING = config.training.data.packing
+MAX_GRAD_NORM = config.training.optimization.max_grad_norm
+OPTIM = config.training.optimization.optimizer
+LOGGING_STEPS = config.logging.logging_steps
+SAVE_STEPS = config.logging.save_steps
+SAVE_TOTAL_LIMIT = config.logging.save_total_limit
+SAVE_ONLY_FINAL = config.logging.save_only_final
+USE_GRADIENT_CHECKPOINTING = config.training.optimization.use_gradient_checkpointing
+SEED = config.training.data.seed
+
+# Wandb Configuration
+WANDB_ENABLED = env_config['wandb_enabled']
+WANDB_PROJECT = env_config['wandb_project']
+WANDB_RUN_NAME = env_config['wandb_run_name']
 
 # Generate output model name
 dataset_short_name = DATASET_NAME.split("/")[-1].lower().replace("_", "-")
@@ -75,11 +106,6 @@ if OUTPUT_MODEL_NAME == "auto" or not OUTPUT_MODEL_NAME:
     output_model_name = f"{model_base}-{dataset_short_name}"
 else:
     output_model_name = OUTPUT_MODEL_NAME
-
-# Base directories
-OUTPUT_DIR_BASE = os.getenv("OUTPUT_DIR_BASE", "./outputs")
-PREPROCESSED_DATA_DIR = os.getenv("PREPROCESSED_DATA_DIR", "./data/preprocessed")
-CACHE_DIR = os.getenv("CACHE_DIR", "./cache")
 
 # Set HuggingFace cache to project directory for consistency
 os.environ["HF_HOME"] = CACHE_DIR
@@ -96,28 +122,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(PREPROCESSED_DATA_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# Training Configuration
-BATCH_SIZE = get_int_env("BATCH_SIZE", 2)
-GRADIENT_ACCUMULATION_STEPS = get_int_env("GRADIENT_ACCUMULATION_STEPS", 4)
-LEARNING_RATE = get_float_env("LEARNING_RATE", 2e-4)
-NUM_TRAIN_EPOCHS = get_float_env("NUM_TRAIN_EPOCHS", 1)  # Allow fractional epochs (0.5, 1.5, etc.)
-WARMUP_RATIO = get_float_env("WARMUP_RATIO", 0.1)  # 10% of total steps
-WARMUP_STEPS = get_int_env("WARMUP_STEPS", 0)  # Overrides warmup_ratio if > 0
-PACKING = get_bool_env("PACKING", False)
-MAX_GRAD_NORM = get_float_env("MAX_GRAD_NORM", 1.0)
-OPTIM = os.getenv("OPTIM", "adamw_8bit")
-LOGGING_STEPS = get_int_env("LOGGING_STEPS", 10)
-SAVE_STEPS = get_int_env("SAVE_STEPS", 500)
-SAVE_TOTAL_LIMIT = get_int_env("SAVE_TOTAL_LIMIT", 3)
-SAVE_ONLY_FINAL = get_bool_env("SAVE_ONLY_FINAL", False)  # Skip intermediate checkpoints
-USE_GRADIENT_CHECKPOINTING = get_bool_env("USE_GRADIENT_CHECKPOINTING", True)
-SEED = get_int_env("SEED", 3407)
-
-# Wandb Configuration
-WANDB_ENABLED = get_bool_env("WANDB_ENABLED", False)
-WANDB_PROJECT = os.getenv("WANDB_PROJECT", "unsloth-finetuning")
-WANDB_RUN_NAME = os.getenv("WANDB_RUN_NAME", "auto")
-if WANDB_RUN_NAME == "auto":
+# Auto-generate wandb run name if needed
+if WANDB_RUN_NAME == "auto" or not WANDB_RUN_NAME:
     WANDB_RUN_NAME = f"{output_model_name}-r{LORA_RANK}"
 
 print("\n" + "="*60)
@@ -352,10 +358,11 @@ except (RuntimeError, ValueError) as e:
         print("   • Set CHECK_SEQ_LENGTH=true in .env")
         print("   • Set FORCE_PREPROCESS=true in .env")
         print("   • Re-run: python scripts/train.py")
-        print("   • This will filter out samples exceeding MAX_SEQ_LENGTH")
+        print("   • This will filter out samples exceeding max_seq_length")
         print("\n2. Increase context length:")
-        print(f"   • Current: MAX_SEQ_LENGTH={MAX_SEQ_LENGTH}")
-        print("   • Increase MAX_SEQ_LENGTH in .env (e.g., 4096, 8192)")
+        print(f"   • Current: max_seq_length={MAX_SEQ_LENGTH}")
+        print("   • Increase training.data.max_seq_length in training_params.yaml")
+        print("   • Example: max_seq_length: 4096")
         print("   • Note: Higher values require more VRAM")
         print("\n3. Check your dataset:")
         print("   • Some samples may be extremely long")
@@ -435,6 +442,32 @@ if hasattr(trainer.state, 'log_history'):
                 ])
 
 metrics_path = os.path.join(LORA_DIR, "training_metrics.json")
+
+# Copy training_params.yaml to lora/ directory for reproducibility
+print(f"\n📋 Copying training configuration to LoRA directory...")
+try:
+    import shutil
+    from pathlib import Path
+
+    # Determine which config file was used
+    if args.config:
+        config_source = Path(args.config)
+        if not config_source.is_absolute():
+            # Resolve relative path from project root
+            project_root = Path(__file__).parent.parent
+            config_source = project_root / args.config
+    else:
+        # Default config
+        project_root = Path(__file__).parent.parent
+        config_source = project_root / "training_params.yaml"
+
+    # Copy to lora/ directory
+    config_dest = Path(LORA_DIR) / "training_params.yaml"
+    shutil.copy2(config_source, config_dest)
+    print(f"✅ Copied {config_source.name} to lora/ directory")
+    print(f"   Anyone can use this file to replicate your training configuration")
+except Exception as e:
+    print(f"⚠️  Could not copy training config (non-critical): {e}")
 
 # Calculate actual warmup steps used
 actual_warmup_steps = None
@@ -606,40 +639,41 @@ print(f"\n  This will create:")
 print(f"    • merged_16bit/ (merged model + Modelfile)")
 
 # Show what base model will be used for merging
-INFERENCE_BASE_MODEL = os.getenv("INFERENCE_BASE_MODEL", "")
-if INFERENCE_BASE_MODEL:
-    print(f"      Using INFERENCE_BASE_MODEL: {INFERENCE_BASE_MODEL}")
+if INFERENCE_BASE_MODEL_CONFIG:
+    print(f"      Using inference_model: {INFERENCE_BASE_MODEL_CONFIG}")
     print(f"      Quality: 16-bit (best quality)")
 else:
-    print(f"      Using LORA_BASE_MODEL: {LORA_BASE_MODEL}")
+    print(f"      Using base_model: {LORA_BASE_MODEL}")
     print(f"      Quality: Same as training (4-bit)")
 
-# Show additional output formats
-OUTPUT_FORMATS = os.getenv("OUTPUT_FORMATS", "")
-if OUTPUT_FORMATS:
+# Show additional output formats from config
+if config.output.formats:
     format_names = {
         "merged_4bit": "4-bit safetensors",
+        "merged_16bit": "16-bit safetensors",
         "gguf_f16": "GGUF 16-bit",
+        "gguf_f32": "GGUF 32-bit",
         "gguf_q8_0": "GGUF Q8_0",
+        "gguf_q6_k": "GGUF Q6_K",
         "gguf_q5_k_m": "GGUF Q5_K_M",
         "gguf_q4_k_m": "GGUF Q4_K_M",
+        "gguf_q3_k_m": "GGUF Q3_K_M",
         "gguf_q2_k": "GGUF Q2_K",
     }
-    formats = [f.strip() for f in OUTPUT_FORMATS.split(",") if f.strip()]
-    if formats:
-        print(f"\n    • Additional formats:")
-        for fmt in formats:
-            friendly_name = format_names.get(fmt, fmt)
-            print(f"      - {friendly_name}")
 
-        # Estimate build time
-        gguf_count = sum(1 for f in formats if f.startswith("gguf_"))
-        if gguf_count > 0:
-            est_time = 3 + (gguf_count * 1.5)  # ~3 min merge + ~1.5 min per GGUF
-            print(f"\n  ⏱️  Estimated build time: ~{est_time:.0f} minutes")
-        else:
-            print(f"\n  ⏱️  Estimated build time: ~3 minutes")
+    print(f"\n    • Additional formats:")
+    for fmt in config.output.formats:
+        friendly_name = format_names.get(fmt, fmt)
+        print(f"      - {friendly_name}")
+
+    # Estimate build time
+    gguf_count = sum(1 for f in config.output.formats if f.startswith("gguf_"))
+    if gguf_count > 0:
+        est_time = 3 + (gguf_count * 1.5)  # ~3 min merge + ~1.5 min per GGUF
+        print(f"\n  ⏱️  Estimated build time: ~{est_time:.0f} minutes")
+    else:
+        print(f"\n  ⏱️  Estimated build time: ~3 minutes")
 else:
-    print(f"\n  💡 Tip: Set OUTPUT_FORMATS in .env to create GGUF/other formats")
+    print(f"\n  💡 Tip: Add formats to output.formats in training_params.yaml")
 
 print("\n" + "="*60 + "\n")

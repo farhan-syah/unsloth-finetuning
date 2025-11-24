@@ -5,7 +5,7 @@ This script:
 1. Loads and preprocesses datasets (applies chat template, filters invalid samples)
 2. Analyzes dataset size and sequence lengths
 3. Detects available GPU memory
-4. Provides smart recommendations for BATCH_SIZE, MAX_STEPS, NUM_TRAIN_EPOCHS
+4. Provides smart recommendations for batch size, steps, and epochs
 
 Run this before training to get optimal configuration suggestions.
 """
@@ -13,16 +13,29 @@ Run this before training to get optimal configuration suggestions.
 import torch
 import os
 import json
+import argparse
 from datetime import datetime
 from unsloth import FastLanguageModel, standardize_sharegpt
 from unsloth.chat_templates import get_chat_template
 from unsloth.ollama_template_mappers import MODEL_TO_OLLAMA_TEMPLATE_MAPPER
 from datasets import load_dataset, get_dataset_split_names, concatenate_datasets
-from dotenv import load_dotenv
 import math
 
-# Load environment variables
-load_dotenv()
+# Load configuration
+from config_loader import get_config_for_script
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description="Preprocess dataset and analyze configuration")
+parser.add_argument(
+    "--config",
+    type=str,
+    default=None,
+    help="Path to YAML config file (default: training_params.yaml)"
+)
+args = parser.parse_args()
+
+# Load configuration from YAML and .env
+config, env_config = get_config_for_script(args.config, verbose=False)
 
 # Helper functions
 def get_template_for_model(model_name):
@@ -34,25 +47,19 @@ def get_template_for_model(model_name):
         return MODEL_TO_OLLAMA_TEMPLATE_MAPPER[model_name]
     return None
 
-def get_bool_env(key, default=False):
-    val = os.getenv(key, str(default)).lower()
-    return val in ('true', '1', 'yes', 'on')
+# Model and dataset from YAML config
+LORA_BASE_MODEL = config.model.base_model
+DATASET_NAME = config.dataset.name
+OUTPUT_MODEL_NAME = config.model.output_name
 
-def get_int_env(key, default):
-    return int(os.getenv(key, str(default)))
+# Training parameters from YAML config
+MAX_SEQ_LENGTH = config.training.data.max_seq_length
 
-def get_float_env(key, default):
-    return float(os.getenv(key, str(default)))
-
-# Configuration
-LORA_BASE_MODEL = os.getenv("LORA_BASE_MODEL", "unsloth/Qwen3-1.7B-unsloth-bnb-4bit")
-DATASET_NAME = os.getenv("DATASET_NAME", "yahma/alpaca-cleaned")
-MAX_SEQ_LENGTH = get_int_env("MAX_SEQ_LENGTH", 4096)
-PREPROCESSED_DATA_DIR = os.getenv("PREPROCESSED_DATA_DIR", "./data/preprocessed")
-CACHE_DIR = os.getenv("CACHE_DIR", "./cache")
-OUTPUT_MODEL_NAME = os.getenv("OUTPUT_MODEL_NAME", "auto")
-FORCE_PREPROCESS = get_bool_env("FORCE_PREPROCESS", False)
-CHECK_SEQ_LENGTH = get_bool_env("CHECK_SEQ_LENGTH", True)  # Default true for analysis
+# Paths from .env config
+PREPROCESSED_DATA_DIR = env_config['preprocessed_data_dir']
+CACHE_DIR = env_config['cache_dir']
+FORCE_PREPROCESS = env_config['force_preprocess']
+CHECK_SEQ_LENGTH = env_config['check_seq_length']
 
 # Set HuggingFace cache to project directory for consistency
 os.environ["HF_HOME"] = CACHE_DIR
@@ -60,10 +67,10 @@ os.environ["TRANSFORMERS_CACHE"] = os.path.join(CACHE_DIR, "transformers")
 os.environ["HF_HUB_CACHE"] = os.path.join(CACHE_DIR, "hub")
 
 # Current training config (for comparison)
-CURRENT_BATCH_SIZE = get_int_env("BATCH_SIZE", 2)
-CURRENT_GRAD_ACCUM = get_int_env("GRADIENT_ACCUMULATION_STEPS", 4)
-CURRENT_MAX_STEPS = get_int_env("MAX_STEPS", 0)
-CURRENT_NUM_EPOCHS = get_float_env("NUM_TRAIN_EPOCHS", 1)  # Allow fractional epochs
+CURRENT_BATCH_SIZE = config.training.batch.size
+CURRENT_GRAD_ACCUM = config.training.batch.gradient_accumulation_steps
+CURRENT_MAX_STEPS = config.training.epochs.max_steps
+CURRENT_NUM_EPOCHS = config.training.epochs.num_train_epochs
 
 # Generate names
 dataset_short_name = DATASET_NAME.split("/")[-1].lower().replace("_", "-")
@@ -255,7 +262,7 @@ if preprocess_exists and not FORCE_PREPROCESS:
     from datasets import load_from_disk
     dataset = load_from_disk(PREPROCESSED_DATASET_PATH)
     print(f"✅ Loaded {len(dataset)} samples (already preprocessed)")
-    print(f"   To reprocess, set FORCE_PREPROCESS=true in .env")
+    print(f"   To reprocess, set FORCE_PREPROCESS=true in .env (operational flag)")
 
     # Load metadata if available
     dataset_metadata = None
@@ -763,13 +770,19 @@ else:
 print(f"   → {quality_note}")
 
 print(f"\n🚀 OPTIMAL CONFIGURATION (Maximum Performance):")
-print(f"   LORA_RANK={recommended_lora_rank}")
-print(f"   LORA_ALPHA={recommended_lora_alpha}")
-print(f"   LEARNING_RATE={recommended_lr}")
-print(f"   NUM_TRAIN_EPOCHS={target_epochs}")
-print(f"   BATCH_SIZE={recommended_batch_size}")
-print(f"   GRADIENT_ACCUMULATION_STEPS={recommended_grad_accum}")
-print(f"   MAX_STEPS={recommended_max_steps}  # {target_epochs} epoch(s)")
+print(f"   Add to training_params.yaml:")
+print(f"   training:")
+print(f"     lora:")
+print(f"       rank: {recommended_lora_rank}")
+print(f"       alpha: {recommended_lora_alpha}")
+print(f"     batch:")
+print(f"       size: {recommended_batch_size}")
+print(f"       gradient_accumulation_steps: {recommended_grad_accum}")
+print(f"     optimization:")
+print(f"       learning_rate: {recommended_lr}")
+print(f"     epochs:")
+print(f"       num_train_epochs: {target_epochs}")
+print(f"       max_steps: {recommended_max_steps}  # Or use epochs")
 
 vram_estimate = 6 + (recommended_lora_rank / 16) * 2  # Rough estimate
 print(f"\n⚙️  Estimated VRAM: ~{vram_estimate:.0f}GB")
@@ -781,15 +794,18 @@ if gpu_available and available_vram < vram_estimate:
     print(f"\n⚠️  VRAM MAY BE INSUFFICIENT")
     print(f"\n💡 If you encounter OOM errors, try these (in order):")
     print(f"\n   Option 1 - Reduce Batch Size:")
-    print(f"      BATCH_SIZE=2")
-    print(f"      GRADIENT_ACCUMULATION_STEPS=4")
+    print(f"      batch:")
+    print(f"        size: 2")
+    print(f"        gradient_accumulation_steps: 4")
     print(f"\n   Option 2 - Reduce LoRA Rank:")
-    print(f"      LORA_RANK={recommended_lora_rank // 2}")
-    print(f"      LORA_ALPHA={recommended_lora_alpha // 2}")
+    print(f"      lora:")
+    print(f"        rank: {recommended_lora_rank // 2}")
+    print(f"        alpha: {recommended_lora_alpha // 2}")
     print(f"\n   Option 3 - Reduce Alpha First (if overfitting):")
-    print(f"      LORA_ALPHA={recommended_lora_rank}  # 1:1 ratio instead of 2:1")
+    print(f"      lora:")
+    print(f"        alpha: {recommended_lora_rank}  # 1:1 ratio instead of 2:1")
     print(f"\n   Option 4 - Both:")
-    print(f"      LORA_RANK={recommended_lora_rank // 2}, BATCH_SIZE=2")
+    print(f"      lora.rank: {recommended_lora_rank // 2}, batch.size: 2")
 
 print(f"\n📖 Strategy:")
 print(f"   {rank_note}")
@@ -808,29 +824,33 @@ if gpu_available:
     print(f"\n🎮 GPU Optimization:")
     print(f"   Available VRAM: {available_vram:.1f} GB")
     if available_vram < 4:
-        print(f"   • Low VRAM: Using BATCH_SIZE=1 with high accumulation")
-        print(f"   • Consider: USE_GRADIENT_CHECKPOINTING=true (saves VRAM)")
+        print(f"   • Low VRAM: Using batch.size=1 with high accumulation")
+        print(f"   • Consider: optimization.use_gradient_checkpointing=true (saves VRAM)")
     elif available_vram < 8:
         print(f"   • Medium VRAM: Balanced settings")
-        print(f"   • Optional: USE_GRADIENT_CHECKPOINTING=false for 20% speed boost")
+        print(f"   • Optional: optimization.use_gradient_checkpointing=false for 20% speed boost")
     else:
-        print(f"   • High VRAM: Can increase BATCH_SIZE for faster training")
-        print(f"   • Recommended: USE_GRADIENT_CHECKPOINTING=false for maximum speed")
+        print(f"   • High VRAM: Can increase batch.size for faster training")
+        print(f"   • Recommended: optimization.use_gradient_checkpointing=false for maximum speed")
 
 # Warning if current config will train too many epochs
 if CURRENT_MAX_STEPS > 0:
     current_epochs_estimate = (CURRENT_MAX_STEPS * current_effective_batch) / final_dataset_size
-    if current_epochs_estimate > TARGET_MAX_EPOCHS:
-        print(f"\n⚠️  WARNING: Current MAX_STEPS={CURRENT_MAX_STEPS} will train for ~{current_epochs_estimate:.1f} epochs")
+    # Warn if training for more than 3 epochs (likely overfitting)
+    if current_epochs_estimate > 3:
+        print(f"\n⚠️  WARNING: Current epochs.max_steps={CURRENT_MAX_STEPS} will train for ~{current_epochs_estimate:.1f} epochs")
         print(f"   This is likely too much and may cause overfitting!")
-        print(f"   Recommended: Use MAX_STEPS={recommended_max_steps_1_epoch} for 1 epoch instead")
+        # Calculate recommended max_steps for target_epochs
+        recommended_steps_for_target = steps_per_epoch * target_epochs
+        print(f"   Recommended: Use epochs.max_steps={recommended_steps_for_target} for {target_epochs} epoch(s) instead")
 
 print("\n" + "="*70)
 print("✅ PREPROCESSING COMPLETE")
 print("="*70)
 print(f"\nNext steps:")
-print(f"1. Update your .env file with recommended settings above")
+print(f"1. Update training_params.yaml with recommended settings above")
 print(f"2. Run: python scripts/train.py")
+print(f"   (Or: python scripts/train.py --config quick_test.yaml)")
 print(f"3. Monitor training loss - stop if it plateaus early")
 print(f"\nPreprocessed data saved to: {PREPROCESSED_DATASET_PATH}")
 print("="*70 + "\n")
