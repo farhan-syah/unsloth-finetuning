@@ -284,7 +284,7 @@ class BenchmarkConfig(BaseModel):
     )
     default_tasks: List[str] = Field(
         default=["ifeval", "gsm8k", "hellaswag"],
-        description="Default lm-eval tasks: ifeval, gsm8k, hellaswag, mmlu, truthfulqa_mc, etc."
+        description="Default lm-eval tasks: ifeval, gsm8k, hellaswag, mmlu, truthfulqa, etc."
     )
 
     class Config:

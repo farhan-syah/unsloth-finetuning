@@ -90,7 +90,7 @@ After training completes, you'll see:
 Use the quick test configuration for initial validation:
 ```bash
 cp .env.example .env
-python scripts/train.py --config quick_test.yaml  # ~2 minutes
+python scripts/train.py --config quick_test.yaml  # Quick test with 50 steps
 ```
 
 Verify:

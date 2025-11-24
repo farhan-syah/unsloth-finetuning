@@ -673,13 +673,12 @@ if config.output.formats:
         friendly_name = format_names.get(fmt, fmt)
         print(f"      - {friendly_name}")
 
-    # Estimate build time
+    # Show format count info
     gguf_count = sum(1 for f in config.output.formats if f.startswith("gguf_"))
     if gguf_count > 0:
-        est_time = 3 + (gguf_count * 1.5)  # ~3 min merge + ~1.5 min per GGUF
-        print(f"\n  ⏱️  Estimated build time: ~{est_time:.0f} minutes")
+        print(f"\n  📦 Build will create: 1 merged model + {gguf_count} GGUF quantization(s)")
     else:
-        print(f"\n  ⏱️  Estimated build time: ~3 minutes")
+        print(f"\n  📦 Build will create: 1 merged model")
 else:
     print(f"\n  💡 Tip: Add formats to output.formats in training_params.yaml")
 

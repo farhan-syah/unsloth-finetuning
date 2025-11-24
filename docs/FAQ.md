@@ -59,9 +59,9 @@ Depends on:
 - GPU speed
 - Hyperparameters
 
-Examples (Qwen3-4B on RTX 3060):
-- Test (100 samples, 50 steps): ~2 minutes
-- Small dataset (10K samples): ~30-60 minutes
+Example training configurations:
+- Test (100 samples, 50 steps): Quick validation
+- Small dataset (10K samples): Short training run
 - Large dataset (100K+ samples): Several hours
 
 ### Q: How much VRAM do I need?
@@ -306,9 +306,9 @@ Check in `training_params.yaml`:
 
 ### Q: GGUF conversion is slow
 
-Normal - quantization is CPU-intensive. Q4_K_M takes ~5-10 minutes for 4B model.
+This is normal - quantization is CPU-intensive and time varies by model size and CPU performance.
 
-Multiple quantizations run sequentially, so `gguf_q4_k_m,gguf_q5_k_m,gguf_q8_0` takes 15-30 minutes.
+Multiple quantizations run sequentially. Conversion time scales with the number of quantizations and model size.
 
 ## Distribution
 

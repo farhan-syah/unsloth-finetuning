@@ -90,12 +90,14 @@ You'll be prompted for:
 
 ### Benchmark Suites
 
-| Suite | Tasks | Time | Best For |
-|-------|-------|------|----------|
-| **Test Mode** | IFEval (5 samples) | ~30 sec | Testing the benchmark workflow |
-| **Quick** | IFEval | ~15 min | Quick validation |
-| **Core** | IFEval + GSM8K + HellaSwag | ~30 min | Balanced evaluation |
-| **Full** | Core + MMLU | ~60 min | Complete validation before deployment |
+| Suite | Tasks | Best For |
+|-------|-------|----------|
+| **Test Mode** | IFEval (5 samples) | Testing the benchmark workflow |
+| **Quick** | IFEval | Quick validation |
+| **Core** | IFEval + GSM8K + HellaSwag | Balanced evaluation |
+| **Full** | Core + MMLU | Complete validation before deployment |
+
+**Note:** Execution time varies significantly based on hardware specifications.
 
 **Currently Supported:** Test mode and IFEval are fully tested. Other benchmarks (GSM8K, HellaSwag, MMLU) are available but may require additional testing.
 
@@ -437,10 +439,13 @@ Keep a log of what works:
 
 **Q: How long do benchmarks take?**
 
-- Test Mode: ~30 seconds
-- Quick (IFEval): ~15 minutes
-- Core: ~30 minutes
-- Full: ~60 minutes
+Execution time varies significantly based on:
+- Hardware specifications (GPU model, VRAM)
+- Number of samples evaluated
+- Benchmark task complexity
+- Backend used (Ollama, vLLM, Transformers)
+
+Test Mode is fastest (only 5 samples), while full evaluation runs all samples for complete accuracy.
 - With comparison: 2x time (runs twice)
 
 **Q: Can I skip comparison mode?**

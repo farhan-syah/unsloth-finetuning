@@ -249,11 +249,11 @@ benchmark:
   # Default benchmark tasks to run
   # These are lm-evaluation-harness task names
   # Available tasks:
-  #   - ifeval: Instruction-following evaluation (~15 min)
-  #   - gsm8k: Math reasoning with chain-of-thought (~15 min)
-  #   - hellaswag: Commonsense reasoning (~10 min)
-  #   - mmlu: Knowledge across 57 subjects (~30 min)
-  #   - truthfulqa_mc: Truthfulness evaluation (~15 min)
+  #   - ifeval: Instruction-following evaluation
+  #   - gsm8k: Math reasoning with chain-of-thought
+  #   - hellaswag: Commonsense reasoning
+  #   - mmlu: Knowledge across 57 subjects
+  #   - truthfulqa: Truthfulness evaluation
   #   - arc_challenge: Science questions
   # See full list: lm-eval --tasks list
   default_tasks:

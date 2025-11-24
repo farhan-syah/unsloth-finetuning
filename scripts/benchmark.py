@@ -658,7 +658,7 @@ print("     → Quick verification of benchmark flow and README generation")
 print("     → Not representative of actual model performance")
 print("  2. Full mode (all samples) - varies by benchmark")
 print("     → Complete evaluation for accurate performance metrics")
-print("     → IFEval: ~15 min, GSM8K: ~15 min, HellaSwag: ~10 min, MMLU: ~30 min")
+print("     → Execution time varies by hardware and benchmark type")
 
 mode_choice = input(f"\nSelect mode (1-2) [default: 1 for testing]: ").strip() or "1"
 

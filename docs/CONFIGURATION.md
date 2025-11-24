@@ -321,7 +321,7 @@ output:
 | `merged_16bit` | Largest | Best | HuggingFace safetensors |
 | `merged_4bit` | Small | Good | 4-bit safetensors |
 
-**Build Time:** ~2 minutes for merged + ~1.5 minutes per GGUF quantization
+**Note:** Build time varies based on hardware and number of quantizations
 
 ---
 
@@ -340,18 +340,18 @@ benchmark:
                           # Options: ollama, vllm, transformers
 
   default_tasks:          # Default benchmark tasks
-    - ifeval              # Instruction-following (~15 min)
-    - gsm8k               # Math reasoning (~10 min)
-    - hellaswag           # Commonsense reasoning (~5 min)
+    - ifeval              # Instruction-following
+    - gsm8k               # Math reasoning
+    - hellaswag           # Commonsense reasoning
 ```
 
 **Available Benchmark Tasks:**
 - `ifeval` - Instruction-following evaluation (recommended)
 - `gsm8k` - Math reasoning with chain-of-thought
 - `hellaswag` - Commonsense reasoning
-- `mmlu` - Knowledge across 57 subjects (~30 min)
-- `truthfulqa` - Truthfulness evaluation (~20 min)
-- `arc` - Science questions (~15 min)
+- `mmlu` - Knowledge across 57 subjects
+- `truthfulqa` - Truthfulness evaluation
+- `arc` - Science questions
 
 ---
 

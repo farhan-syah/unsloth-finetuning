@@ -163,9 +163,9 @@ See [Google Colab Setup](#-google-colab-setup) for detailed instructions.
 
 **Use case:** Training on local hardware, offline environments, or when you need full system control
 
-**Setup time:** Approximately 7 minutes for quick test (2 min training + 5 min conversion on GTX 1660-class GPU)
+**Setup time:** Quick test completes in minutes on modern GPUs (training + conversion)
 
-### 1. Setup (One-time, ~10 minutes)
+### 1. Setup (One-time)
 
 ```bash
 # Clone repository
@@ -475,7 +475,7 @@ DATASET_MAX_SAMPLES = 0    # All 1K samples
 **Step 4: Run Training**
 
 1. Click Runtime → Run all (or press Ctrl+F9)
-2. Wait for setup (~5 minutes)
+2. Wait for initial setup to complete
 3. Training will start automatically
 4. Monitor progress in real-time
 
