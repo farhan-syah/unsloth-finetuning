@@ -10,9 +10,9 @@ echo "============================================================"
 echo ""
 
 # Check if we're in the correct directory
-if [ ! -f "train.py" ] || [ ! -f "build.py" ]; then
+if [ ! -f "scripts/train.py" ] || [ ! -f "scripts/build.py" ]; then
     echo "❌ Error: Must run from unsloth project directory"
-    echo "   Expected files: train.py, build.py"
+    echo "   Expected files: scripts/train.py, scripts/build.py"
     exit 1
 fi
 
