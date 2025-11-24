@@ -50,6 +50,8 @@ accelerate>=0.25.0
 sentencepiece>=0.2.0
 protobuf
 python-dotenv>=1.0.0
+PyYAML>=6.0
+pydantic>=2.0
 
 # Benchmarking
 lm-eval>=0.4.0  # For model evaluation and benchmarking

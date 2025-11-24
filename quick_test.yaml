@@ -1,0 +1,79 @@
+# =============================================================================
+# Quick Test Configuration
+# =============================================================================
+# Minimal configuration for rapid testing and development.
+# Use this to quickly validate your setup before running full training.
+#
+# Key differences from production config:
+#   - Smaller LoRA rank (32 vs 64)
+#   - Smaller batch size (2 vs 4)
+#   - Fewer epochs (1 vs 3)
+#   - Limited dataset (100 samples)
+#   - Minimal output formats (only F16 GGUF)
+#   - More frequent logging for debugging
+# =============================================================================
+
+# Use same model/dataset as production config
+# (inherits defaults from config_schema.py)
+model:
+  base_model: unsloth/Llama-3.2-1B-Instruct-bnb-4bit
+  inference_model: unsloth/Llama-3.2-1B-Instruct
+  output_name: auto
+
+dataset:
+  name: GAIR/lima
+  # Limited to 100 samples for quick testing
+  max_samples: 100
+
+training:
+  lora:
+    # Smaller rank for faster testing
+    rank: 32
+    alpha: 64
+    dropout: 0.0
+    use_rslora: false
+
+  batch:
+    # Smaller batch for faster iteration
+    size: 2
+    gradient_accumulation_steps: 1
+
+  optimization:
+    # Slightly higher learning rate for faster convergence
+    learning_rate: 5e-4
+    optimizer: adamw_8bit
+    warmup_ratio: 0.05  # Shorter warmup for quick tests
+    warmup_steps: 0
+    max_grad_norm: 1.0
+    use_gradient_checkpointing: true
+
+  epochs:
+    # Just 1 epoch for quick validation
+    num_train_epochs: 1
+    max_steps: 0
+
+  data:
+    packing: false
+    seed: 3407
+    max_seq_length: 2048
+
+logging:
+  # More frequent logging for debugging
+  logging_steps: 1
+  save_steps: 10
+  save_total_limit: 1
+  save_only_final: true
+
+output:
+  # Only generate F16 GGUF for quick validation
+  # Add more formats once you're satisfied with the results
+  formats:
+    - gguf_f16
+
+benchmark:
+  max_tokens: 256  # Shorter for faster benchmarks
+  batch_size: 4
+  default_backend: transformers  # No server needed
+  # Only run one quick task for fast validation
+  default_tasks:
+    - ifeval

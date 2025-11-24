@@ -1,0 +1,237 @@
+# =============================================================================
+# Training Configuration
+# =============================================================================
+# This file contains all training hyperparameters for fine-tuning.
+# Copy this file to your lora/ output directory for reproducibility.
+#
+# Quick start profiles:
+#   - training_params.yaml (this file) - Default production settings
+#   - quick_test.yaml - Fast testing with minimal resources
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Model Selection
+# -----------------------------------------------------------------------------
+model:
+  # Base model for LoRA training (use quantized models to save VRAM)
+  # Examples:
+  #   - unsloth/Llama-3.2-1B-Instruct-bnb-4bit (4-6GB VRAM)
+  #   - unsloth/Llama-3.2-3B-Instruct-bnb-4bit (6-8GB VRAM)
+  #   - unsloth/Phi-3.5-mini-instruct-bnb-4bit (6-8GB VRAM)
+  #   - unsloth/gemma-2-2b-it-bnb-4bit (6-8GB VRAM)
+  # Browse more: https://huggingface.co/unsloth
+  base_model: unsloth/Llama-3.2-1B-Instruct-bnb-4bit
+
+  # Unquantized model for GGUF conversion (required for GGUF output)
+  # Must be architecturally compatible with base_model
+  # Set to null to skip GGUF conversion
+  inference_model: unsloth/Llama-3.2-1B-Instruct
+
+  # Output directory name
+  # "auto" generates: {model_name}-{dataset_name}
+  # Or set custom name: "my-chatbot-v1"
+  output_name: auto
+
+# -----------------------------------------------------------------------------
+# Dataset Configuration
+# -----------------------------------------------------------------------------
+dataset:
+  # HuggingFace dataset name or local path
+  # Popular datasets:
+  #   - GAIR/lima (1K curated, best quality, requires HF login)
+  #   - yahma/alpaca-cleaned (52K instruction, ungated)
+  #   - databricks/databricks-dolly-15k (15K human-written, ungated)
+  name: GAIR/lima
+
+  # Limit dataset to N samples for testing
+  # 0 = use full dataset
+  max_samples: 0
+
+# -----------------------------------------------------------------------------
+# Training Configuration
+# -----------------------------------------------------------------------------
+training:
+  # ---------------------------------------------------------------------------
+  # LoRA Configuration
+  # ---------------------------------------------------------------------------
+  # LoRA (Low-Rank Adaptation) reduces trainable parameters by decomposing
+  # weight matrices into smaller rank matrices.
+  lora:
+    # LoRA rank: Number of rank dimensions
+    # Higher rank = more parameters = better quality but slower training
+    # Typical values: 8 (fast), 16, 32, 64 (balanced), 128 (high quality)
+    rank: 64
+
+    # LoRA alpha: Scaling factor for LoRA updates
+    # Often set to 2x the rank value
+    # Affects the magnitude of updates during training
+    alpha: 128
+
+    # Dropout: Regularization to prevent overfitting
+    # 0.0 = no dropout, 0.05-0.1 = light regularization
+    dropout: 0.0
+
+    # Rank-Stabilized LoRA: Improves training stability for high ranks
+    # Recommended for rank >= 128
+    use_rslora: false
+
+  # ---------------------------------------------------------------------------
+  # Batch Configuration
+  # ---------------------------------------------------------------------------
+  batch:
+    # Per-device batch size: Samples processed simultaneously
+    # Reduce if you get CUDA out-of-memory errors
+    # Typical values: 1-8 depending on GPU VRAM and model size
+    size: 4
+
+    # Gradient accumulation: Simulate larger batches
+    # Effective batch size = size × gradient_accumulation_steps
+    # Example: size=4, accumulation=2 → effective_batch_size=8
+    gradient_accumulation_steps: 2
+
+  # ---------------------------------------------------------------------------
+  # Optimization Configuration
+  # ---------------------------------------------------------------------------
+  optimization:
+    # Learning rate: Step size for parameter updates
+    # Too high = unstable training, too low = slow convergence
+    # Typical range: 1e-5 to 5e-4
+    learning_rate: 3e-4
+
+    # Optimizer: Algorithm for parameter updates
+    # Options:
+    #   - adamw_8bit: Memory-efficient, recommended for most cases
+    #   - adamw_torch: Standard PyTorch AdamW
+    #   - sgd: Stochastic gradient descent
+    #   - adafactor: Memory-efficient alternative to AdamW
+    optimizer: adamw_8bit
+
+    # Warmup ratio: Fraction of training for learning rate warmup
+    # Helps stabilize training in early steps
+    # 0.0 = no warmup, 0.1 = 10% of training
+    warmup_ratio: 0.1
+
+    # Warmup steps: Absolute number of warmup steps
+    # If > 0, overrides warmup_ratio
+    # Use this for precise control over warmup duration
+    warmup_steps: 0
+
+    # Maximum gradient norm: Prevents exploding gradients
+    # Gradients larger than this value are clipped
+    max_grad_norm: 1.0
+
+    # Gradient checkpointing: Trade compute for memory
+    # Reduces VRAM usage by ~50% with ~20% speed penalty
+    # Recommended: true for large models or limited VRAM
+    use_gradient_checkpointing: true
+
+  # ---------------------------------------------------------------------------
+  # Training Duration
+  # ---------------------------------------------------------------------------
+  epochs:
+    # Number of epochs: Full passes through the dataset
+    # Ignored if max_steps > 0
+    num_train_epochs: 3
+
+    # Maximum steps: Total training steps
+    # If > 0, overrides num_train_epochs
+    # Use this for precise control over training duration
+    max_steps: 0
+
+  # ---------------------------------------------------------------------------
+  # Data Processing
+  # ---------------------------------------------------------------------------
+  data:
+    # Sequence packing: Pack multiple samples into single sequences
+    # Pros: Better GPU utilization, faster training
+    # Cons: Changes loss calculation, may affect quality
+    # Recommended: false for most use cases
+    packing: false
+
+    # Random seed: For reproducibility
+    # Set to a specific value to get identical results across runs
+    seed: 3407
+
+    # Maximum sequence length: Context window size
+    # Must not exceed model's maximum position embeddings
+    # Common values: 512, 1024, 2048, 4096, 8192
+    max_seq_length: 2048
+
+# =============================================================================
+# Logging & Checkpoints
+# =============================================================================
+logging:
+  # Log metrics every N steps
+  # Lower values = more frequent logging, higher overhead
+  logging_steps: 5
+
+  # Save checkpoint every N steps
+  # Lower values = more checkpoints, more disk space
+  save_steps: 25
+
+  # Maximum checkpoints to keep
+  # 0 = keep all checkpoints
+  # Higher values use more disk space
+  save_total_limit: 2
+
+  # Only save the final checkpoint
+  # Overrides save_total_limit if true
+  # Recommended for production to save disk space
+  save_only_final: true
+
+# =============================================================================
+# Output Formats
+# =============================================================================
+output:
+  # List of formats to generate after training
+  # Available formats:
+  #   GGUF Quantizations (llama.cpp compatible):
+  #     - gguf_f16: Full precision (largest, highest quality)
+  #     - gguf_f32: 32-bit float (even larger)
+  #     - gguf_q8_0: 8-bit quantization (excellent quality, reasonable size)
+  #     - gguf_q6_k: 6-bit quantization (good quality)
+  #     - gguf_q5_k_m: 5-bit quantization (balanced)
+  #     - gguf_q4_k_m: 4-bit quantization (small size, good for inference)
+  #     - gguf_q3_k_m: 3-bit quantization (very small)
+  #     - gguf_q2_k: 2-bit quantization (smallest, lowest quality)
+  #
+  #   Merged Models:
+  #     - merged_16bit: Full 16-bit merged model
+  #     - merged_4bit: 4-bit quantized merged model
+  formats:
+    - gguf_f16
+    - gguf_q8_0
+    - gguf_q6_k
+    - gguf_q4_k_m
+
+# =============================================================================
+# Benchmarking
+# =============================================================================
+benchmark:
+  # Maximum tokens to generate during benchmarking
+  max_tokens: 512
+
+  # Batch size for benchmark evaluation
+  batch_size: 8
+
+  # Default backend for running benchmarks
+  # Options:
+  #   - transformers: Direct PyTorch inference (recommended, no server needed)
+  #   - ollama: GGUF models via llama.cpp (requires ollama running)
+  #   - vllm: Fast inference server (requires vllm server running)
+  default_backend: transformers
+
+  # Default benchmark tasks to run
+  # These are lm-evaluation-harness task names
+  # Available tasks:
+  #   - ifeval: Instruction-following evaluation (~15 min)
+  #   - gsm8k: Math reasoning with chain-of-thought (~15 min)
+  #   - hellaswag: Commonsense reasoning (~10 min)
+  #   - mmlu: Knowledge across 57 subjects (~30 min)
+  #   - truthfulqa_mc: Truthfulness evaluation (~15 min)
+  #   - arc_challenge: Science questions
+  # See full list: lm-eval --tasks list
+  default_tasks:
+    - ifeval
+    - gsm8k
+    - hellaswag
