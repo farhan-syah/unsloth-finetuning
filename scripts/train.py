@@ -108,9 +108,10 @@ else:
     output_model_name = OUTPUT_MODEL_NAME
 
 # Set HuggingFace cache to project directory for consistency
-os.environ["HF_HOME"] = CACHE_DIR
+# Don't set HF_HOME - it creates a nested cache/ subdirectory
 os.environ["TRANSFORMERS_CACHE"] = os.path.join(CACHE_DIR, "transformers")
 os.environ["HF_HUB_CACHE"] = os.path.join(CACHE_DIR, "hub")
+os.environ["HF_DATASETS_CACHE"] = os.path.join(CACHE_DIR, "datasets")
 
 # Auto-created paths
 OUTPUT_DIR = os.path.join(OUTPUT_DIR_BASE, output_model_name)

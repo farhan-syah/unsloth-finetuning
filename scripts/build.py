@@ -83,9 +83,10 @@ FORCE_REBUILD = env_config['force_rebuild']
 CACHE_DIR = env_config['cache_dir']
 
 # Set HuggingFace cache to project directory for consistency
-os.environ["HF_HOME"] = CACHE_DIR
+# Don't set HF_HOME - it creates a nested cache/ subdirectory
 os.environ["TRANSFORMERS_CACHE"] = os.path.join(CACHE_DIR, "transformers")
 os.environ["HF_HUB_CACHE"] = os.path.join(CACHE_DIR, "hub")
+os.environ["HF_DATASETS_CACHE"] = os.path.join(CACHE_DIR, "datasets")
 
 PUSH_TO_HUB = env_config['push_to_hub']
 HF_USERNAME = env_config['hf_username']

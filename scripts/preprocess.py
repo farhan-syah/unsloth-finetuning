@@ -63,9 +63,10 @@ FORCE_PREPROCESS = env_config['force_preprocess']
 CHECK_SEQ_LENGTH = env_config['check_seq_length']
 
 # Set HuggingFace cache to project directory for consistency
-os.environ["HF_HOME"] = CACHE_DIR
+# Don't set HF_HOME - it creates a nested cache/ subdirectory
 os.environ["TRANSFORMERS_CACHE"] = os.path.join(CACHE_DIR, "transformers")
 os.environ["HF_HUB_CACHE"] = os.path.join(CACHE_DIR, "hub")
+os.environ["HF_DATASETS_CACHE"] = os.path.join(CACHE_DIR, "datasets")
 
 # Current training config (for comparison)
 CURRENT_BATCH_SIZE = config.training.batch.size

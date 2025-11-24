@@ -35,9 +35,10 @@ from dotenv import load_dotenv
 # Set HuggingFace cache to project directory for consistency
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
 CACHE_DIR = PROJECT_ROOT / "cache"
-os.environ["HF_HOME"] = str(CACHE_DIR)
+# Don't set HF_HOME - it creates a nested cache/ subdirectory
 os.environ["TRANSFORMERS_CACHE"] = str(CACHE_DIR / "transformers")
 os.environ["HF_HUB_CACHE"] = str(CACHE_DIR / "hub")
+os.environ["HF_DATASETS_CACHE"] = str(CACHE_DIR / "datasets")
 
 # Suppress warnings
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"  # Suppress transformers warnings
