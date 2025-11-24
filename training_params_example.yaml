@@ -49,15 +49,24 @@ dataset:
   #   - GAIR/lima (1K curated, best quality, requires HF login)
   #   - yahma/alpaca-cleaned (52K instruction, ungated)
   #   - databricks/databricks-dolly-15k (15K human-written, ungated)
-  #   - openai/gsm8k (requires config: 'main' or 'socratic')
+  #   - openai/gsm8k (requires subset: 'main' or 'socratic')
   name: yahma/alpaca-cleaned
 
-  # Dataset configuration/subset name (optional, required for some datasets)
+  # Dataset subset/configuration name (optional, required for some datasets)
   # Leave as null for most datasets
-  # Examples that REQUIRE config:
+  # Examples that REQUIRE subset:
   #   - openai/gsm8k: use 'main' or 'socratic'
   #   - allenai/c4: use 'en', 'en.noblocklist', etc.
-  config: null
+  subset: null
+
+  # Dataset split to use
+  # Options: specific split name (e.g., 'train', 'test', 'validation')
+  #          or 'all' to merge all available splits
+  # Leave as null to default to 'all'
+  # Examples:
+  #   - openai/gsm8k: use 'train' for training data only
+  #   - GAIR/lima: only has 'train' split
+  split: null
 
   # Limit dataset to N samples for testing
   # 0 = use full dataset

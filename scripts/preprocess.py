@@ -50,7 +50,8 @@ def get_template_for_model(model_name):
 # Model and dataset from YAML config
 LORA_BASE_MODEL = config.model.base_model
 DATASET_NAME = config.dataset.name
-DATASET_CONFIG = config.dataset.config  # Optional config/subset name
+DATASET_SUBSET = config.dataset.subset  # Optional subset/configuration name
+DATASET_SPLIT = config.dataset.split or "all"  # Which split(s) to use
 OUTPUT_MODEL_NAME = config.model.output_name
 
 # Training parameters from YAML config
@@ -322,20 +323,37 @@ if not preprocess_exists:
     except ImportError:
         pass
 
-    # Load all splits
+    # Load dataset with split configuration
     try:
         # First try standard loading
-        splits = get_dataset_split_names(DATASET_NAME, config_name=DATASET_CONFIG)
-        print(f"   Found {len(splits)} splits: {splits}")
+        available_splits = get_dataset_split_names(DATASET_NAME, config_name=DATASET_SUBSET)
+        print(f"   Found {len(available_splits)} available splits: {available_splits}")
+
+        # Determine which splits to load
+        if DATASET_SPLIT == "all":
+            splits_to_load = available_splits
+            print(f"   Loading all splits: {splits_to_load}")
+        else:
+            if DATASET_SPLIT not in available_splits:
+                raise ValueError(
+                    f"Requested split '{DATASET_SPLIT}' not found in dataset. "
+                    f"Available splits: {available_splits}"
+                )
+            splits_to_load = [DATASET_SPLIT]
+            print(f"   Loading split: {DATASET_SPLIT}")
 
         all_datasets = []
-        for split_name in splits:
-            split_data = load_dataset(DATASET_NAME, name=DATASET_CONFIG, split=split_name)
+        for split_name in splits_to_load:
+            split_data = load_dataset(DATASET_NAME, name=DATASET_SUBSET, split=split_name)
             all_datasets.append(split_data)
             print(f"   Loaded {split_name}: {len(split_data)} samples")
 
-        dataset = concatenate_datasets(all_datasets)
-        print(f"   Total samples (all splits): {len(dataset)}")
+        if len(all_datasets) > 1:
+            dataset = concatenate_datasets(all_datasets)
+            print(f"   Total samples (merged): {len(dataset)}")
+        else:
+            dataset = all_datasets[0]
+            print(f"   Total samples: {len(dataset)}")
     except RuntimeError as e:
         if "Dataset scripts are no longer supported" in str(e):
             print(f"   ⚠️  Dataset uses legacy loading script")
@@ -440,8 +458,35 @@ if not preprocess_exists:
         # Check format of first sample
         first_sample = dataset[0]
 
+        # Handle question/answer format (e.g., GSM8K, MATH, etc.)
+        if "question" in first_sample and "answer" in first_sample:
+            print(f"\n   Detected question/answer format")
+
+            def qa_to_messages(example):
+                """Convert Q&A format to chat messages."""
+                messages = [
+                    {"role": "user", "content": example.get("question", "")},
+                    {"role": "assistant", "content": example.get("answer", "")}
+                ]
+                return {"conversations": messages}
+
+            print(f"   Converting to messages format...")
+            dataset = dataset.map(qa_to_messages, num_proc=4, desc="Converting Q&A to chat")
+            print(f"   ✅ Converted to HuggingFace chat format")
+
+            # Now standardize using Unsloth
+            print(f"\n   🦥 Standardizing dataset format using Unsloth...")
+            dataset = standardize_sharegpt(
+                dataset,
+                tokenizer=tokenizer,
+                aliases_for_system=["system"],
+                aliases_for_user=["user", "human", "input"],
+                aliases_for_assistant=["gpt", "assistant", "output"],
+                num_proc=4
+            )
+            print(f"   ✅ Dataset standardized to HuggingFace chat format")
         # Some datasets have conversations as a list of strings (alternating user/assistant)
-        if "conversations" in first_sample and isinstance(first_sample["conversations"], list):
+        elif "conversations" in first_sample and isinstance(first_sample["conversations"], list):
             if len(first_sample["conversations"]) > 0 and isinstance(first_sample["conversations"][0], str):
                 print(f"\n   Detected alternating string conversation format")
 
@@ -484,7 +529,8 @@ if not preprocess_exists:
 
         # Apply chat template to convert messages to text
         def convert_to_text(example):
-            messages = example.get("messages", [])
+            # standardize_sharegpt creates "conversations" field, not "messages"
+            messages = example.get("conversations", example.get("messages", []))
             if not messages:
                 return {"text": ""}
 

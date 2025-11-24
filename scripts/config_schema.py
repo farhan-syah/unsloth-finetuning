@@ -40,9 +40,13 @@ class DatasetConfig(BaseModel):
         default="GAIR/lima",
         description="HuggingFace dataset name or path."
     )
-    config: Optional[str] = Field(
+    subset: Optional[str] = Field(
         default=None,
-        description="Dataset configuration/subset name. Required for some datasets like openai/gsm8k."
+        description="Dataset subset/configuration name. Required for some datasets like openai/gsm8k (use 'main' or 'socratic')."
+    )
+    split: Optional[str] = Field(
+        default=None,
+        description="Dataset split to use (e.g., 'train', 'test', 'validation'). Use 'all' to merge all available splits. Default: 'all'"
     )
     max_samples: int = Field(
         default=0,
