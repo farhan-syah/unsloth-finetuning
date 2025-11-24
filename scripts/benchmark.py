@@ -175,9 +175,13 @@ EXPECTED_BASELINES = {
         "1.7b": 0.48,  # Qwen2-1.5B: ~48-52%
         "description": "Knowledge (57 subjects)"
     },
-    "truthfulqa_mc": {
+    "truthfulqa_mc1": {
         "1.7b": 0.35,
-        "description": "Truthfulness (multiple choice)"
+        "description": "Truthfulness (single-answer)"
+    },
+    "truthfulqa_mc2": {
+        "1.7b": 0.50,
+        "description": "Truthfulness (multi-answer)"
     }
 }
 
@@ -534,74 +538,141 @@ print("\n" + "-"*70)
 print("🔧 SELECT BENCHMARK BACKEND")
 print("-"*70)
 print("\nAvailable backends:")
-print("  1. Ollama API - GGUF models via HTTP server")
-print("     → Requires: ollama running, model loaded")
-print("     → Uses: llama.cpp inference via Ollama")
-print("  2. Local PyTorch - Direct GPU inference (no server)")
+print("  1. Local PyTorch - Direct GPU inference (recommended)")
 print("     → Requires: merged_16bit or merged_4bit format")
 print("     → Uses: transformers library, loads model into VRAM")
-print("     → Best for: Comparing merged vs base (unquantized)")
+print("     → Best for: Most users, no server needed")
+print("  2. Ollama API - GGUF models via HTTP server")
+print("     → Requires: ollama server running + model loaded")
+print("     → Uses: llama.cpp inference via Ollama")
+print("     → Best for: Testing GGUF quantizations")
 print("  3. Both backends")
-print("     → Test both Ollama (GGUF) and PyTorch (merged)")
+print("     → Test both PyTorch (merged) and Ollama (GGUF)")
 print("     → Useful for comparing quantization impact")
 
-backend_choice = input(f"\nSelect backend (1-3) [default: 2]: ").strip() or "2"
+backend_choice = input(f"\nSelect backend (1-3) [default: 1]: ").strip() or "1"
 
 backends_to_run = []
 if backend_choice == "1":
-    backends_to_run.append("ollama")
-elif backend_choice == "2":
     backends_to_run.append("huggingface")
-elif backend_choice == "3":
-    backends_to_run.extend(["ollama", "huggingface"])
-else:
-    print("❌ Invalid choice, using Ollama")
+elif backend_choice == "2":
     backends_to_run.append("ollama")
+elif backend_choice == "3":
+    backends_to_run.extend(["huggingface", "ollama"])
+else:
+    print("❌ Invalid choice, using Local PyTorch")
+    backends_to_run.append("huggingface")
 
-# Step 4: Benchmark suite selection
+# Step 4: Benchmark task selection
 print("\n" + "-"*70)
-print("📊 SELECT BENCHMARK SUITE")
+print("📊 SELECT BENCHMARK TASKS")
 print("-"*70)
-print("\nPredefined suites:")
-print("  1. Test Mode (5 samples only) - ~30 seconds ⚡")
-print("     → For testing the benchmark flow")
-print("  2. Quick (IFEval only) - ~15 minutes")
-print("     → Tests: Instruction-following")
-print("  3. Core (IFEval + GSM8K + HellaSwag) - ~30 minutes")
-print("     → Tests: Instructions, math, commonsense")
-print("  4. Full (+ MMLU) - ~60 minutes")
-print("     → Tests: All above + knowledge retention (catastrophic forgetting)")
-print("  5. Custom (select individual benchmarks)")
 
-suite_choice = input(f"\nSelect suite (1-5) [default: 1 for testing]: ").strip() or "1"
+# Load default tasks from training config
+default_tasks = []
+if config and hasattr(config, 'benchmark') and hasattr(config.benchmark, 'default_tasks'):
+    default_tasks = config.benchmark.default_tasks or []
+
+print("\nTask selection:")
+if default_tasks:
+    print(f"  1. Use configured tasks (default)")
+    print(f"     → Tasks from training_params.yaml: {', '.join(default_tasks)}")
+    print(f"  2. Custom tasks (enter manually)")
+else:
+    print(f"  1. Custom tasks")
+    print(f"     → No default tasks configured in training_params.yaml")
+
+task_choice = input(f"\nSelect option (1-2) [default: 1]: ").strip() or "1"
+
+if task_choice == "1" and default_tasks:
+    tasks = default_tasks
+    print(f"✅ Using configured tasks: {', '.join(tasks)}")
+else:
+    print("\n💡 Common benchmark tasks:")
+    print("  - ifeval: Instruction-following")
+    print("  - gsm8k: Math reasoning")
+    print("  - hellaswag: Commonsense reasoning")
+    print("  - mmlu: General knowledge (57 subjects)")
+    print("  - truthfulqa_mc1: Truthfulness (single-answer)")
+    print("  - truthfulqa_mc2: Truthfulness (multi-answer)")
+    print("  - arc_challenge: Science questions")
+    print("\n  Run 'lm-eval --tasks list' to see all 11,000+ available tasks")
+    print("  Or check: config/valid_lm_eval_tasks.txt")
+    custom_tasks = input("\nEnter benchmark tasks (comma-separated): ").strip()
+    tasks = [t.strip() for t in custom_tasks.split(",") if t.strip()]
+    if not tasks:
+        print("❌ No tasks entered, using ifeval as default")
+        tasks = ["ifeval"]
+    else:
+        print(f"✅ Selected tasks: {', '.join(tasks)}")
+
+# Validate that all selected tasks exist
+print("\n🔍 Validating task names...")
+try:
+    # Load cached task list (much faster than running lm_eval --tasks list)
+    task_list_file = PROJECT_ROOT / "config" / "valid_lm_eval_tasks.txt"
+
+    if not task_list_file.exists():
+        print(f"⚠️  Task list cache not found: {task_list_file}")
+        print(f"   Run 'python scripts/generate_task_list.py' to create it")
+        print(f"   Skipping validation...")
+        available_tasks = set()
+    else:
+        with open(task_list_file, 'r') as f:
+            available_tasks = set(line.strip() for line in f if line.strip())
+
+    invalid_tasks = []
+    for task in tasks:
+        if task not in available_tasks:
+            invalid_tasks.append(task)
+
+    if invalid_tasks:
+        print(f"\n❌ ERROR: Invalid task name(s) detected: {', '.join(invalid_tasks)}")
+        print(f"\n💡 Possible corrections:")
+        for task in invalid_tasks:
+            if 'truthful' in task.lower():
+                print(f"   • '{task}' → Use 'truthfulqa_mc1' or 'truthfulqa_mc2' instead")
+            else:
+                # Try to find similar tasks
+                similar = [t for t in available_tasks if task.lower() in t.lower()]
+                if similar:
+                    print(f"   • '{task}' → Similar tasks: {', '.join(list(similar)[:3])}")
+        print(f"\n   Run 'python -m lm_eval --tasks list' to see all available tasks")
+        print(f"   Or check: config/valid_lm_eval_tasks.txt")
+        sys.exit(1)
+
+    print("✅ All task names are valid")
+except subprocess.TimeoutExpired:
+    print("⚠️  Task validation timed out, skipping validation...")
+except Exception as e:
+    print(f"⚠️  Could not validate task names: {e}")
+    print("   Proceeding anyway, but benchmark may fail if tasks are invalid...")
+
+# Step 4.5: Test mode vs Full mode
+print("\n" + "-"*70)
+print("🧪 SELECT EXECUTION MODE")
+print("-"*70)
+print("\nHow many samples should be evaluated?")
+print("  1. Test mode (5 samples per benchmark) - ~30 seconds per task ⚡")
+print("     → Quick verification of benchmark flow and README generation")
+print("     → Not representative of actual model performance")
+print("  2. Full mode (all samples) - varies by benchmark")
+print("     → Complete evaluation for accurate performance metrics")
+print("     → IFEval: ~15 min, GSM8K: ~15 min, HellaSwag: ~10 min, MMLU: ~30 min")
+
+mode_choice = input(f"\nSelect mode (1-2) [default: 1 for testing]: ").strip() or "1"
 
 test_mode = False
-if suite_choice == "1":
-    # Test mode - just 5 samples
-    tasks = ["ifeval"]
+if mode_choice == "1":
     test_mode = True
-    print("⚡ Test mode enabled - will run only 5 samples")
-elif suite_choice == "2":
-    tasks = ["ifeval"]
-elif suite_choice == "3":
-    tasks = ["ifeval", "gsm8k", "hellaswag"]
-elif suite_choice == "4":
-    tasks = ["ifeval", "gsm8k", "hellaswag", "mmlu"]
-elif suite_choice == "5":
-    print("\nAvailable benchmarks:")
-    print("  - ifeval: Instruction-following (~15 min)")
-    print("  - gsm8k: Math reasoning (~15 min)")
-    print("  - hellaswag: Commonsense (~10 min)")
-    print("  - mmlu: Knowledge across 57 subjects (~30 min)")
-    print("  - truthfulqa_mc: Truthfulness (~15 min)")
-    custom_tasks = input("\nEnter tasks (comma-separated): ").strip()
-    tasks = [t.strip() for t in custom_tasks.split(",") if t.strip()]
+    print("⚡ Test mode enabled - will run only 5 samples per benchmark")
+    print("   ℹ️  This is for testing the flow, not for accurate performance evaluation")
+elif mode_choice == "2":
+    test_mode = False
+    print("📊 Full mode enabled - will evaluate all samples")
 else:
     print("❌ Invalid choice, using Test mode")
-    tasks = ["ifeval"]
     test_mode = True
-
-print(f"✅ Selected benchmarks: {', '.join(tasks)}")
 
 # Step 5: Batch size configuration
 print("\n" + "-"*70)
