@@ -462,13 +462,19 @@ try:
         project_root = Path(__file__).parent.parent
         config_source = project_root / "training_params.yaml"
 
-    # Copy to lora/ directory
-    config_dest = Path(LORA_DIR) / "training_params.yaml"
-    shutil.copy2(config_source, config_dest)
-    print(f"✅ Copied {config_source.name} to lora/ directory")
-    print(f"   Anyone can use this file to replicate your training configuration")
+    # Check if source file exists
+    if not config_source.exists():
+        print(f"⚠️  Config file not found: {config_source}")
+        print(f"   Skipping config copy (this is expected if using config/ directory)")
+    else:
+        # Copy to lora/ directory
+        config_dest = Path(LORA_DIR) / "training_params.yaml"
+        shutil.copy2(config_source, config_dest)
+        print(f"✅ Copied {config_source.name} to lora/ directory")
+        print(f"   This file will be pushed to HuggingFace for reproducibility")
 except Exception as e:
-    print(f"⚠️  Could not copy training config (non-critical): {e}")
+    print(f"⚠️  Could not copy training config: {e}")
+    print(f"   This is non-critical but means the config won't be in the HuggingFace repo")
 
 # Calculate actual warmup steps used
 actual_warmup_steps = None

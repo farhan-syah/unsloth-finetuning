@@ -58,7 +58,9 @@ def cleanup_lora_directory(lora_dir, verbose=True):
     - adapter_model.safetensors (the actual LoRA weights)
     - adapter_config.json (LoRA configuration)
     - training_metrics.json (training statistics)
+    - loss_history.csv (training loss history)
     - trainer_state.json (for README generation)
+    - training_params.yaml (training configuration for reproducibility)
     - README.md (documentation)
 
     Everything else (tokenizer files, model configs, cache) is redundant
@@ -77,6 +79,7 @@ def cleanup_lora_directory(lora_dir, verbose=True):
         "training_metrics.json",     # Training stats
         "loss_history.csv",          # Training loss history
         "trainer_state.json",        # Trainer state (for README generation)
+        "training_params.yaml",      # Training configuration for reproducibility
         "README.md",                 # Documentation
         "*.md"                       # Keep any markdown files
     ]
