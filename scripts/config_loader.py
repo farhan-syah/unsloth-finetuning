@@ -131,7 +131,6 @@ def load_env_config():
         # Operational flags
         'check_seq_length': get_bool('CHECK_SEQ_LENGTH', True),
         'force_preprocess': get_bool('FORCE_PREPROCESS', True),
-        'force_retrain': get_bool('FORCE_RETRAIN', True),
         'force_rebuild': get_bool('FORCE_REBUILD', True),
 
         # Ollama configuration
