@@ -70,6 +70,10 @@ OUTPUT_DIR = os.path.join(OUTPUT_DIR_BASE, output_model_name)
 
 print(f"📂 Found model output: {output_model_name}")
 
+# Check if training_params.yaml exists in LoRA directory
+training_params_path = os.path.join(LORA_DIR, "training_params.yaml")
+has_training_params = os.path.exists(training_params_path)
+
 # Load training configuration from training_metrics.json
 metrics_path = os.path.join(LORA_DIR, "training_metrics.json")
 if not os.path.exists(metrics_path):
@@ -395,6 +399,28 @@ inputs = tokenizer.apply_chat_template(messages, tokenize=True, return_tensors="
 
 lora_readme += f"""
 ## Training Configuration
+
+{f'''> **📋 Reproducible Configuration Available**
+> The complete training configuration is included in [`training_params.yaml`](./training_params.yaml).
+> Download this file and use it directly with [unsloth-finetuning](https://github.com/farhan-syah/unsloth-finetuning) by [@farhan-syah](https://github.com/farhan-syah) to reproduce this exact model:
+>
+> ```bash
+> # Clone the training pipeline
+> git clone https://github.com/farhan-syah/unsloth-finetuning
+> cd unsloth-finetuning
+>
+> # Download the config from this repo
+> wget https://huggingface.co/{HF_LORA_REPO if HF_LORA_REPO else "YOUR_USERNAME/YOUR_MODEL"}/resolve/main/training_params.yaml
+>
+> # Configure your environment (.env)
+> cp .env.example .env
+> # Edit .env with your settings
+>
+> # Run training with the exact same config
+> python scripts/train.py --config training_params.yaml
+> ```
+
+''' if has_training_params else ''}
 
 ### LoRA Parameters
 - **LoRA Rank (r)**: {LORA_RANK}

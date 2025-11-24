@@ -152,6 +152,10 @@ if training_time == "Unknown" and os.path.exists(trainer_state_path):
         if "max_steps" in trainer_state:
             total_steps = trainer_state["max_steps"]
 
+# Check if training_params.yaml exists in LoRA directory
+training_params_path = os.path.join(LORA_DIR, "training_params.yaml")
+has_training_params = os.path.exists(training_params_path)
+
 # Generate LoRA adapter README
 lora_readme = f"""---
 base_model: {LORA_BASE_MODEL}
@@ -182,6 +186,28 @@ Fine-tuned LoRA adapters for [{LORA_BASE_MODEL}](https://huggingface.co/{LORA_BA
 - **Adapter Type**: PEFT LoRA adapters only (requires base model)
 
 ## Training Configuration
+
+{f'''> **📋 Reproducible Configuration Available**
+> The complete training configuration is included in [`training_params.yaml`](./training_params.yaml).
+> Download this file and use it directly with [unsloth-finetuning](https://github.com/farhan-syah/unsloth-finetuning) by [@farhan-syah](https://github.com/farhan-syah) to reproduce this exact model:
+>
+> ```bash
+> # Clone the training pipeline
+> git clone https://github.com/farhan-syah/unsloth-finetuning
+> cd unsloth-finetuning
+>
+> # Download the config from this repo
+> wget https://huggingface.co/{HF_LORA_REPO if HF_LORA_REPO else "YOUR_USERNAME/YOUR_MODEL"}/resolve/main/training_params.yaml
+>
+> # Configure your environment (.env)
+> cp .env.example .env
+> # Edit .env with your settings
+>
+> # Run training with the exact same config
+> python scripts/train.py --config training_params.yaml
+> ```
+
+''' if has_training_params else ''}
 
 ### LoRA Parameters
 - **LoRA Rank (r)**: {LORA_RANK}
