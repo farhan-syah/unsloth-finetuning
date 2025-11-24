@@ -6,7 +6,9 @@ Complete reference for configuring the Unsloth fine-tuning pipeline.
 
 The pipeline uses **two configuration files**:
 
-1. **training_params.yaml** - All training hyperparameters
+1. **training_params.yaml** - All training hyperparameters and model/dataset selection
+   - Model selection (base_model, inference_model, output_name)
+   - Dataset configuration (name, max_samples)
    - LoRA settings (rank, alpha, dropout)
    - Batch size and gradient accumulation
    - Learning rate and optimizer
@@ -17,13 +19,13 @@ The pipeline uses **two configuration files**:
    - Benchmark settings
 
 2. **.env** - Credentials, paths, and operational flags
-   - Model selection (LORA_BASE_MODEL, INFERENCE_BASE_MODEL)
-   - Dataset name (DATASET_NAME)
-   - Output naming (OUTPUT_MODEL_NAME)
    - HuggingFace credentials (HF_TOKEN, HF_USERNAME)
-   - Directory paths (OUTPUT_DIR_BASE, CACHE_DIR)
+   - Author attribution (AUTHOR_NAME)
+   - Directory paths (OUTPUT_DIR_BASE, CACHE_DIR, PREPROCESSED_DATA_DIR)
    - W&B integration (WANDB_ENABLED, WANDB_PROJECT)
-   - Operational flags (FORCE_PREPROCESS, CHECK_SEQ_LENGTH)
+   - HuggingFace Hub (PUSH_TO_HUB, HF_MODEL_NAME)
+   - Operational flags (FORCE_PREPROCESS, CHECK_SEQ_LENGTH, FORCE_REBUILD)
+   - Ollama configuration (OLLAMA_BASE_URL)
 
 **Why this split?**
 - **YAML files are shareable** - Commit `training_params.yaml` to git, share with team
@@ -36,9 +38,12 @@ The pipeline uses **two configuration files**:
 ```bash
 # 1. Copy .env template (for credentials and paths)
 cp .env.example .env
-vim .env  # Edit HF_TOKEN, model/dataset names
+vim .env  # Edit HF_TOKEN, HF_USERNAME, AUTHOR_NAME
 
-# 2. Use default training config or customize
+# 2. Configure model, dataset, and training (optional - defaults work for testing)
+vim training_params.yaml  # Edit model, dataset, training parameters
+
+# 3. Run training
 python scripts/train.py  # Uses training_params.yaml (default)
 python scripts/train.py --config quick_test.yaml  # For testing
 python scripts/train.py --config my_custom_config.yaml  # Custom
@@ -352,59 +357,7 @@ benchmark:
 
 ## Environment Configuration (.env)
 
-### Model Selection
-
-```bash
-# Training base model (required) - 4-bit quantized for efficient training
-LORA_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct-bnb-4bit
-
-# Optional: Different base for merging (for best quality)
-# Must be unquantized (no -bnb-4bit suffix)
-INFERENCE_BASE_MODEL=  # Empty = use LORA_BASE_MODEL (4-bit)
-# INFERENCE_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct  # 16-bit unquantized
-
-# Output naming (optional)
-OUTPUT_MODEL_NAME=auto  # Auto-generates from model + dataset
-# OUTPUT_MODEL_NAME=my-chatbot-v1  # Or set custom name
-```
-
-**Choose Model Based on VRAM:**
-
-| Model | VRAM Required | Training Time | Quality |
-|-------|---------------|---------------|---------|
-| Llama-3.2-1B | 4-6GB | Fast | Good for testing |
-| Llama-3.2-3B | 6-8GB | Medium | Balanced |
-| Phi-3.5-mini | 6-8GB | Medium | Good for code |
-| Qwen2.5-1.5B | 4-6GB | Fast | Multilingual |
-| Gemma-2-2B | 6-8GB | Medium | Strong reasoning |
-
-Browse more at: https://huggingface.co/unsloth
-
-**INFERENCE_BASE_MODEL Note:**
-- Required for GGUF conversion
-- Must be architecturally compatible with LORA_BASE_MODEL
-- Leave empty to skip GGUF (only creates merged safetensors)
-
----
-
-### Dataset Configuration
-
-```bash
-# HuggingFace dataset name
-DATASET_NAME=GAIR/lima
-
-# Popular datasets:
-# - GAIR/lima (1K high-quality, gated - requires HF login)
-# - yahma/alpaca-cleaned (52K ungated)
-# - databricks/databricks-dolly-15k (15K ungated)
-# - OpenAssistant/oasst1 (88K multilingual conversations)
-```
-
-**Gated Datasets:**
-For datasets like GAIR/lima that require access:
-1. Request access on HuggingFace
-2. Run `python scripts/preprocess.py` (will prompt for login)
-3. Or set `HF_TOKEN` in `.env`
+**Note:** Model and dataset selection have moved to YAML files. The .env file now only contains credentials, paths, and operational flags.
 
 ---
 
@@ -706,17 +659,28 @@ If you have an old `.env` file with training parameters, here's how to migrate:
 | `SAVE_TOTAL_LIMIT` | `logging.save_total_limit` | Moved to YAML |
 | `SAVE_ONLY_FINAL` | `logging.save_only_final` | Moved to YAML |
 | `OUTPUT_FORMATS` | `output.formats` | Moved to YAML (now a list) |
-| `LORA_BASE_MODEL` | Stays in `.env` | Model selection |
-| `INFERENCE_BASE_MODEL` | Stays in `.env` | Model selection |
-| `DATASET_NAME` | Stays in `.env` | Dataset selection |
+| `LORA_BASE_MODEL` | `model.base_model` | **Moved to YAML** |
+| `INFERENCE_BASE_MODEL` | `model.inference_model` | **Moved to YAML** |
+| `OUTPUT_MODEL_NAME` | `model.output_name` | **Moved to YAML** |
+| `DATASET_NAME` | `dataset.name` | **Moved to YAML** |
+| `DATASET_MAX_SAMPLES` | `dataset.max_samples` | **Moved to YAML** (was also in training.epochs) |
 | `HF_TOKEN` | Stays in `.env` | Credentials |
+| `HF_USERNAME` | Stays in `.env` | Credentials |
+| `AUTHOR_NAME` | Stays in `.env` | Attribution |
 | `OUTPUT_DIR_BASE` | Stays in `.env` | Paths |
 | `CHECK_SEQ_LENGTH` | Stays in `.env` | Operational flag |
+| `FORCE_PREPROCESS` | Stays in `.env` | Operational flag |
+| `FORCE_REBUILD` | Stays in `.env` | Operational flag |
 
 ### Migration Example
 
 **OLD (.env):**
 ```bash
+# Model and dataset (now in YAML)
+LORA_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct-bnb-4bit
+DATASET_NAME=GAIR/lima
+
+# Training parameters (now in YAML)
 LORA_RANK=64
 LORA_ALPHA=128
 BATCH_SIZE=4
@@ -730,6 +694,17 @@ OUTPUT_FORMATS=gguf_f16,gguf_q4_k_m
 
 **NEW (training_params.yaml):**
 ```yaml
+# Model and dataset selection
+model:
+  base_model: unsloth/Llama-3.2-1B-Instruct-bnb-4bit
+  inference_model: unsloth/Llama-3.2-1B-Instruct
+  output_name: auto
+
+dataset:
+  name: GAIR/lima
+  max_samples: 0
+
+# Training parameters
 training:
   lora:
     rank: 64

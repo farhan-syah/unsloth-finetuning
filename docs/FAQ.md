@@ -83,12 +83,18 @@ Tips to reduce VRAM:
 
 See [Training Guide - Out of Memory](TRAINING.md#out-of-memory-oom).
 
-Quick fix:
-```bash
-MAX_SEQ_LENGTH=1024  # Reduce from 4096
-BATCH_SIZE=1         # Reduce from 2
-LORA_RANK=32         # Reduce from 64
-USE_GRADIENT_CHECKPOINTING=true
+Quick fix - Edit `training_params.yaml`:
+```yaml
+training:
+  lora:
+    rank: 32                       # Reduce from 64
+  batch:
+    size: 1                        # Reduce from 4
+    gradient_accumulation_steps: 8 # Maintain effective batch
+  optimization:
+    use_gradient_checkpointing: true
+  data:
+    max_seq_length: 1024           # Reduce from 2048
 ```
 
 ### Q: My model outputs gibberish after training
@@ -123,17 +129,27 @@ Bad training: Loss stays flat or increases
 
 ## Configuration
 
-### Q: What's the difference between MAX_STEPS and NUM_TRAIN_EPOCHS?
+### Q: What's the difference between max_steps and num_train_epochs?
 
-- `MAX_STEPS=0`: Train for `NUM_TRAIN_EPOCHS` epochs
-- `MAX_STEPS=50`: Train for exactly 50 steps (ignores epochs)
+Configure in `training_params.yaml`:
+```yaml
+training:
+  epochs:
+    max_steps: 0              # 0 = use num_train_epochs
+    num_train_epochs: 3       # Number of epochs
+```
 
-Use `MAX_STEPS` for quick testing, `NUM_TRAIN_EPOCHS` for full training.
+- `max_steps: 0`: Train for `num_train_epochs` epochs
+- `max_steps: 50`: Train for exactly 50 steps (ignores epochs)
+
+Use `max_steps` for quick testing, `num_train_epochs` for full training.
 
 ### Q: What LoRA rank should I use?
 
-| Use Case | LoRA Rank |
-|----------|-----------|
+Configure in `training_params.yaml`:
+
+| Use Case | LoRA Rank (training.lora.rank) |
+|----------|--------------------------------|
 | Testing | 16-32 |
 | General | 64 |
 | Complex tasks | 128+ |
@@ -151,22 +167,33 @@ Higher rank = better quality but larger adapters and more VRAM.
 - Want to see statistics
 - Training fails with length errors
 
-### Q: What OUTPUT_FORMATS should I use?
+### Q: What output formats should I use?
 
-Depends on your use case:
+Configure in `training_params.yaml`:
 
-```bash
+```yaml
 # Just training, no conversion
-OUTPUT_FORMATS=
+output:
+  formats: []
 
 # For Ollama (most common)
-OUTPUT_FORMATS=gguf_q4_k_m
+output:
+  formats:
+    - gguf_q4_k_m
 
 # Multiple GGUF quantizations
-OUTPUT_FORMATS=gguf_q4_k_m,gguf_q5_k_m,gguf_q8_0
+output:
+  formats:
+    - gguf_q4_k_m
+    - gguf_q5_k_m
+    - gguf_q8_0
 
-# HuggingFace + Ollama
-OUTPUT_FORMATS=merged_4bit,gguf_q4_k_m
+# High quality formats
+output:
+  formats:
+    - gguf_f16
+    - gguf_q8_0
+    - gguf_q4_k_m
 ```
 
 ## Output & Formats
@@ -271,10 +298,10 @@ CHECK_SEQ_LENGTH=false  # Skip tokenization
 
 ### Q: Training is slower than expected
 
-Check:
-- `USE_GRADIENT_CHECKPOINTING=true` - Saves VRAM but slower
-- `BATCH_SIZE=1` - Increase if VRAM allows
-- Dataset size - Large datasets take time
+Check in `training_params.yaml`:
+- `training.optimization.use_gradient_checkpointing: true` - Saves VRAM but slower
+- `training.batch.size: 1` - Increase if VRAM allows
+- `dataset.max_samples` - Large datasets take time
 - GPU utilization - Run `nvidia-smi` to check
 
 ### Q: GGUF conversion is slow

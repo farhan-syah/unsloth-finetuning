@@ -58,10 +58,10 @@ Training parameters in YAML, credentials in `.env`:
 ```bash
 # Set up credentials and paths
 cp .env.example .env
-vim .env  # Set HF_TOKEN, model/dataset names
+vim .env  # Set HF_TOKEN, HF_USERNAME, AUTHOR_NAME
 
 # Configure training (or use defaults)
-vim training_params.yaml  # Optional: customize training settings
+vim training_params.yaml  # Optional: customize model, dataset, training settings
 
 # Run with default config
 python scripts/train.py
@@ -177,27 +177,42 @@ The script will:
 
 ### 2. Configure (30 seconds)
 
-The `.env.example` is already configured for a quick test. For your first run, just copy it:
+Configuration files are pre-configured for quick testing:
 
 ```bash
+# Copy environment file (for credentials and paths)
 cp .env.example .env
 ```
 
-**Default configuration:**
-- Use a 2B model (fits on 6-8GB GPUs)
-- Train on 100 samples from Alpaca dataset
-- Run for 50 steps (~2 minutes)
+**Default configuration** (from `training_params.yaml` and `quick_test.yaml`):
+- Uses 1B model (fits on 4-6GB GPUs)
+- Trains on GAIR/lima dataset
+- Quick test uses 100 samples, full training uses all samples
 
-**To customize:**
+**To customize credentials:**
 ```bash
-vim .env  # or nano, code, etc.
+vim .env  # Set HF_TOKEN, HF_USERNAME, AUTHOR_NAME
 ```
 
-Key settings to change:
+**To customize training:**
 ```bash
-LORA_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct-bnb-4bit  # Pick your model
-DATASET_NAME=your-dataset/name                          # Pick your dataset
-OUTPUT_FORMATS=gguf_q4_k_m                              # Choose output format
+# Edit default production config
+vim training_params.yaml
+
+# Or edit quick test config
+vim quick_test.yaml
+```
+
+Key settings in YAML:
+```yaml
+model:
+  base_model: unsloth/Llama-3.2-1B-Instruct-bnb-4bit  # Pick your model
+dataset:
+  name: GAIR/lima                                      # Pick your dataset
+output:
+  formats:                                             # Choose output formats
+    - gguf_f16
+    - gguf_q4_k_m
 ```
 
 See [Configuration Guide](docs/CONFIGURATION.md) for all options.
@@ -304,9 +319,10 @@ The pipeline works with any HuggingFace dataset in **SFT (Supervised Fine-Tuning
 | Large instruction | 10K-100K | General instruction-following | yahma/alpaca-cleaned, databricks/databricks-dolly-15k |
 | Domain-specific | Varies | Specialized tasks | Medical, legal, code datasets |
 
-Just set in `.env`:
-```bash
-DATASET_NAME=your-dataset/name  # Any HuggingFace dataset
+Just set in `training_params.yaml`:
+```yaml
+dataset:
+  name: your-dataset/name  # Any HuggingFace dataset
 ```
 
 ### Using Your Own Dataset
@@ -601,19 +617,25 @@ python scripts/build.py  # Minutes per quantization
 
 The pipeline supports any Unsloth-compatible model. Choose based on your GPU:
 
-```bash
-# In .env, change LORA_BASE_MODEL:
+```yaml
+# In training_params.yaml, change model.base_model:
 
-# 6GB+ VRAM (GTX 1660, RTX 3050, RTX 4060)
-LORA_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct-bnb-4bit
+# 4-6GB VRAM (GTX 1660, RTX 3050, RTX 4060)
+model:
+  base_model: unsloth/Llama-3.2-1B-Instruct-bnb-4bit
+  inference_model: unsloth/Llama-3.2-1B-Instruct
 # Typical usage: 4-6GB depending on dataset size
 
-# 8GB+ VRAM (RTX 3060, RTX 4060)
-LORA_BASE_MODEL=unsloth/Llama-3.2-3B-Instruct-bnb-4bit
+# 6-8GB VRAM (RTX 3060, RTX 4060)
+model:
+  base_model: unsloth/Llama-3.2-3B-Instruct-bnb-4bit
+  inference_model: unsloth/Llama-3.2-3B-Instruct
 # Typical usage: 6-8GB
 
-# 16GB+ VRAM (RTX 3090, RTX 4080)
-LORA_BASE_MODEL=unsloth/Llama-3.1-8B-Instruct-bnb-4bit
+# 12-16GB VRAM (RTX 3090, RTX 4080)
+model:
+  base_model: unsloth/Llama-3.1-8B-Instruct-bnb-4bit
+  inference_model: unsloth/Llama-3.1-8B-Instruct
 # Typical usage: 12-16GB
 
 # Browse more at: https://huggingface.co/unsloth
@@ -621,15 +643,29 @@ LORA_BASE_MODEL=unsloth/Llama-3.1-8B-Instruct-bnb-4bit
 
 **Note:** VRAM usage varies based on:
 - Dataset size (more samples = more VRAM during data loading)
-- Batch size and gradient accumulation
-- MAX_SEQ_LENGTH (longer sequences = more VRAM)
+- Batch size and gradient accumulation (in training_params.yaml)
+- max_seq_length (longer sequences = more VRAM)
 - LoRA rank (higher rank = more VRAM)
 
 ## 🔧 Configuration Highlights
 
 ### Training Configuration (training_params.yaml)
 
+All training hyperparameters are configured in YAML files:
+
 ```yaml
+# Model selection
+model:
+  base_model: unsloth/Llama-3.2-1B-Instruct-bnb-4bit    # Training model
+  inference_model: unsloth/Llama-3.2-1B-Instruct        # For GGUF conversion
+  output_name: auto                                      # Auto-generated name
+
+# Dataset
+dataset:
+  name: GAIR/lima                                        # HuggingFace dataset
+  max_samples: 0                                         # 0 = use all
+
+# Training parameters
 training:
   lora:
     rank: 64              # LoRA rank: 8 (fast), 16, 32, 64 (balanced), 128 (high quality)
@@ -647,7 +683,6 @@ training:
   epochs:
     num_train_epochs: 3   # Number of epochs
     max_steps: 0          # 0 = use epochs, >0 = stop after N steps
-    dataset_max_samples: 0  # 0 = use all, >0 = limit for testing
 
   data:
     max_seq_length: 2048  # Maximum sequence length
@@ -669,22 +704,15 @@ output:
 python scripts/train.py --config quick_test.yaml  # Faster: rank=32, 1 epoch, 100 samples
 ```
 
-### Model & Credentials (.env)
+### Credentials & Paths (.env)
+
+Environment variables for credentials, paths, and operational settings:
 
 ```bash
-# Model Selection (choose based on VRAM)
-LORA_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct-bnb-4bit  # 4-6GB VRAM
-# Other options: Llama-3.2-3B, Phi-3.5, Qwen2.5-1.5B, etc.
-
-# Optional: Use unquantized base for merging (better quality)
-INFERENCE_BASE_MODEL=  # Empty = use LORA_BASE_MODEL (4-bit)
-# INFERENCE_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct  # 16-bit unquantized
-
-# Dataset
-DATASET_NAME=GAIR/lima  # Any HuggingFace dataset
-
-# Output naming
-OUTPUT_MODEL_NAME=auto  # Auto = {model}-{dataset}
+# Directory Paths
+OUTPUT_DIR_BASE=./outputs
+PREPROCESSED_DATA_DIR=./data/preprocessed
+CACHE_DIR=./cache
 
 # HuggingFace credentials (optional - for pushing to Hub)
 HF_TOKEN=your-token-here  # Get from https://huggingface.co/settings/tokens
@@ -692,6 +720,22 @@ HF_USERNAME=your-username
 
 # Author Attribution
 AUTHOR_NAME=Your Name  # For model cards and citations
+
+# Operational Flags
+CHECK_SEQ_LENGTH=true      # Check sequence lengths during preprocessing
+FORCE_PREPROCESS=false     # Force reprocessing even if cached
+FORCE_REBUILD=false        # Force rebuilding models
+
+# Weights & Biases (optional)
+WANDB_ENABLED=false
+WANDB_PROJECT=unsloth-finetuning
+
+# HuggingFace Hub (optional)
+PUSH_TO_HUB=false
+HF_MODEL_NAME=auto
+
+# Ollama Configuration
+OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 See [Configuration Guide](docs/CONFIGURATION.md) for all options.
@@ -731,20 +775,21 @@ outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/  # Auto-generated: {model}-{dataset
 **Problem:** GPU runs out of VRAM during training
 
 **Solutions:**
-1. Reduce `training.data.max_seq_length` from 4096 to 2048 or 1024 in `training_params.yaml`
+1. Reduce `training.data.max_seq_length` from 2048 to 1024 in `training_params.yaml`
 2. Reduce `training.batch.size` from 4 to 2 or 1
 3. Increase `training.batch.gradient_accumulation_steps` to maintain effective batch size
 4. Enable `training.optimization.use_gradient_checkpointing: true` (saves VRAM)
-5. Use a smaller model (e.g., 1B instead of 3B) in `.env`
+5. Use a smaller model (e.g., 1B instead of 3B) in `training_params.yaml`
 
-### "Model not found" Error
+### "Model not found" or "Dataset not found" Error
 
-**Problem:** Dataset name is incorrect or private
+**Problem:** Model or dataset name is incorrect or requires authentication
 
 **Solutions:**
-1. Check the exact dataset name on HuggingFace
-2. For gated datasets like LIMA, run `python scripts/preprocess.py` (auto-prompts login)
+1. Check the exact model/dataset name on HuggingFace
+2. For gated datasets like GAIR/lima, ensure you've requested access and set `HF_TOKEN` in `.env`
 3. Try ungated alternative: `yahma/alpaca-cleaned`
+4. Verify model name in `training_params.yaml` matches HuggingFace exactly
 
 ### Training is Too Slow
 
@@ -752,10 +797,10 @@ outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/  # Auto-generated: {model}-{dataset
 
 **Solutions:**
 1. Use `quick_test.yaml` config for rapid testing: `python scripts/train.py --config quick_test.yaml`
-2. Set `training.epochs.dataset_max_samples: 100` in your config (test on subset)
+2. Set `dataset.max_samples: 100` in your YAML config (test on subset)
 3. Set `training.epochs.max_steps: 50` to limit training duration
 4. Set `CHECK_SEQ_LENGTH=false` in `.env` (skip length checking during preprocessing)
-5. Ensure you're using a 4-bit quantized model (`-bnb-4bit`) in `.env`
+5. Ensure you're using a 4-bit quantized model (`-bnb-4bit`) in `training_params.yaml`
 
 ### "Flash Attention failed" Warning
 

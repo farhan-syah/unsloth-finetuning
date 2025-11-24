@@ -5,14 +5,13 @@ Tips, best practices, and troubleshooting for fine-tuning with Unsloth.
 ## Quick Reference
 
 ```bash
-# Test training (2 minutes)
+# Test training (2 minutes) - uses quick_test.yaml
 cp .env.example .env
-# The example is already configured for quick testing
-python scripts/train.py
+python scripts/train.py --config quick_test.yaml
 
-# Full training
+# Full training - uses training_params.yaml
 cp .env.example .env
-# Edit .env (set MAX_STEPS=0, DATASET_MAX_SAMPLES=0)
+# Edit training_params.yaml to customize model, dataset, or parameters
 python scripts/train.py
 ```
 
@@ -88,10 +87,10 @@ After training completes, you'll see:
 
 ### 1. Always Test First
 
-The `.env.example` is pre-configured for quick validation:
+Use the quick test configuration for initial validation:
 ```bash
 cp .env.example .env
-python scripts/train.py  # ~2 minutes
+python scripts/train.py --config quick_test.yaml  # ~2 minutes
 ```
 
 Verify:
@@ -101,12 +100,14 @@ Verify:
 
 ### 2. Monitor VRAM Usage
 
-The training summary shows max VRAM used. If you're close to limit:
-- Reduce `MAX_SEQ_LENGTH`
-- Reduce `BATCH_SIZE`
-- Reduce `LORA_RANK`
+The training summary shows max VRAM used. If you're close to limit, edit `training_params.yaml`:
+- Reduce `training.data.max_seq_length` (from 2048 to 1024)
+- Reduce `training.batch.size` (from 4 to 2 or 1)
+- Reduce `training.lora.rank` (from 64 to 32 or 16)
 
 ### 3. Choose Appropriate LoRA Rank
+
+Configure in `training_params.yaml`:
 
 | LoRA Rank | Adapter Size | Quality | Use Case |
 |-----------|--------------|---------|----------|
@@ -116,7 +117,15 @@ The training summary shows max VRAM used. If you're close to limit:
 
 ### 4. Effective Batch Size Matters
 
-`Effective Batch Size = BATCH_SIZE × GRADIENT_ACCUMULATION_STEPS`
+Configure in `training_params.yaml`:
+```yaml
+training:
+  batch:
+    size: 4                         # Per-device batch size
+    gradient_accumulation_steps: 2  # Gradient accumulation
+```
+
+`Effective Batch Size = size × gradient_accumulation_steps`
 
 Examples:
 - `2 × 4 = 8` (good balance)
@@ -127,7 +136,7 @@ Target: 4-16 effective batch size
 
 ### 5. Sequence Length Checking
 
-**Default: `CHECK_SEQ_LENGTH=false`** (fast)
+**Default: `CHECK_SEQ_LENGTH=false`** (fast) - Set in `.env`
 - Trainer handles truncation automatically
 - Good for most datasets
 
@@ -138,33 +147,56 @@ Target: 4-16 effective batch size
 
 ## Training on Different Hardware
 
+Edit `training_params.yaml` based on your GPU:
+
 ### NVIDIA GPU (12GB)
 
-```bash
-LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit
-MAX_SEQ_LENGTH=4096
-BATCH_SIZE=2
-LORA_RANK=64
+```yaml
+model:
+  base_model: unsloth/Llama-3.2-3B-Instruct-bnb-4bit
+
+training:
+  lora:
+    rank: 64
+  batch:
+    size: 2
+    gradient_accumulation_steps: 4
+  data:
+    max_seq_length: 2048
 ```
 
 ### NVIDIA GPU (8GB)
 
-```bash
-LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit
-MAX_SEQ_LENGTH=2048        # Reduce from 4096
-BATCH_SIZE=1               # Reduce
-GRADIENT_ACCUMULATION_STEPS=8
-LORA_RANK=32               # Reduce
-USE_GRADIENT_CHECKPOINTING=true
+```yaml
+model:
+  base_model: unsloth/Llama-3.2-1B-Instruct-bnb-4bit
+
+training:
+  lora:
+    rank: 32               # Reduced
+  batch:
+    size: 1                # Reduced
+    gradient_accumulation_steps: 8
+  optimization:
+    use_gradient_checkpointing: true
+  data:
+    max_seq_length: 1024   # Reduced
 ```
 
 ### NVIDIA GPU (24GB+)
 
-```bash
-LORA_BASE_MODEL=unsloth/Qwen3-8B-unsloth-bnb-4bit
-MAX_SEQ_LENGTH=4096        # Increase
-BATCH_SIZE=4               # Increase
-LORA_RANK=128              # Increase
+```yaml
+model:
+  base_model: unsloth/Llama-3.1-8B-Instruct-bnb-4bit
+
+training:
+  lora:
+    rank: 128              # Increased
+  batch:
+    size: 4                # Increased
+    gradient_accumulation_steps: 2
+  data:
+    max_seq_length: 4096   # Increased
 ```
 
 ### AMD GPU (ROCm)
@@ -176,11 +208,18 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ### Apple Silicon (M1/M2/M3)
 
-```bash
-LORA_BASE_MODEL=unsloth/Qwen3-1.7B-unsloth-bnb-4bit
-MAX_SEQ_LENGTH=4096
-BATCH_SIZE=1               # MPS has lower memory
-LORA_RANK=32
+```yaml
+model:
+  base_model: unsloth/Llama-3.2-1B-Instruct-bnb-4bit
+
+training:
+  lora:
+    rank: 32
+  batch:
+    size: 1                # MPS has lower memory
+    gradient_accumulation_steps: 8
+  data:
+    max_seq_length: 2048
 ```
 
 ## Common Issues
@@ -192,12 +231,12 @@ LORA_RANK=32
 torch.cuda.OutOfMemoryError: CUDA out of memory
 ```
 
-**Solutions (try in order):**
-1. Reduce `MAX_SEQ_LENGTH` (4096 → 1024 or 2048)
-2. Reduce `BATCH_SIZE` (2 → 1)
-3. Increase `GRADIENT_ACCUMULATION_STEPS` (maintain effective batch)
-4. Enable `USE_GRADIENT_CHECKPOINTING=true`
-5. Reduce `LORA_RANK` (64 → 32)
+**Solutions (try in order) - Edit `training_params.yaml`:**
+1. Reduce `training.data.max_seq_length` (2048 → 1024)
+2. Reduce `training.batch.size` (4 → 2 or 1)
+3. Increase `training.batch.gradient_accumulation_steps` (maintain effective batch)
+4. Enable `training.optimization.use_gradient_checkpointing: true`
+5. Reduce `training.lora.rank` (64 → 32)
 
 ### Sequence Length Errors
 
@@ -286,13 +325,13 @@ Or adapt train.py's `convert_to_text()` function for your format.
 
 ### Hyperparameter Tuning
 
-Key parameters to tune:
-1. **Learning rate** (2e-4, 5e-5, 1e-4)
-2. **LoRA rank** (32, 64, 128)
-3. **Batch size** (effective: 4, 8, 16)
-4. **Training steps/epochs**
+Key parameters to tune in `training_params.yaml`:
+1. **Learning rate** - `training.optimization.learning_rate` (2e-4, 5e-5, 1e-4)
+2. **LoRA rank** - `training.lora.rank` (32, 64, 128)
+3. **Batch size** - `training.batch.size` and `gradient_accumulation_steps` (effective: 4, 8, 16)
+4. **Training epochs** - `training.epochs.num_train_epochs`
 
-Use W&B for systematic tracking:
+Use W&B for systematic tracking (configure in `.env`):
 ```bash
 WANDB_ENABLED=true
 WANDB_PROJECT=my-finetuning
