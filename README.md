@@ -54,12 +54,22 @@ bash setup.sh  # Installs everything automatically
 No need to manually install PyTorch, CUDA versions, or dependencies - it's all automated.
 
 ### 2. **Simple Configuration**
-Everything is controlled by a single `.env` file:
+Training parameters in YAML, credentials in `.env`:
 ```bash
+# Set up credentials and paths
 cp .env.example .env
-vim .env  # Modify required settings
+vim .env  # Set HF_TOKEN, model/dataset names
+
+# Configure training (or use defaults)
+vim training_params.yaml  # Optional: customize training settings
+
+# Run with default config
+python scripts/train.py
+
+# Or use quick test config
+python scripts/train.py --config quick_test.yaml
 ```
-No Python coding required - just edit text configuration.
+No Python coding required - just edit YAML/text configuration.
 
 ### 3. **Automatic Format Conversion**
 - **LoRA adapters** (small, efficient)
@@ -111,7 +121,7 @@ The pipeline automatically detects and converts between these formats.
 - 🎯 **One-command setup** - Automated installation
 - 🔄 **Smart caching & backups** - Automatic backups before retraining, easy restore
 - 📦 **Multiple formats** - LoRA, merged safetensors, GGUF quantizations
-- 🔧 **Single config file** - Everything controlled via `.env`
+- 🔧 **Flexible config** - YAML for training params, `.env` for credentials (shareable configs!)
 - 🤖 **Auto-detection** - Chat templates, dataset formats, and model types detected automatically
 
 ## 🚀 Quick Start
@@ -544,24 +554,41 @@ This workflow lets you use Colab's powerful GPUs for training while doing GGUF c
 For full training on the entire dataset (not just a quick test):
 
 ```bash
-# Edit .env and adjust these settings:
-vim .env
+# Edit training_params.yaml for production settings:
+vim training_params.yaml
 ```
 
 Change from test mode to production:
-```bash
-# Test settings (default in .env.example)
-MAX_STEPS=50              # ← Change to 0 for full training
-DATASET_MAX_SAMPLES=100   # ← Change to 0 to use all samples
-LORA_RANK=16              # ← Change to 64 for better quality
-LORA_ALPHA=32             # ← Change to 128 for better quality
+```yaml
+training:
+  lora:
+    rank: 64              # Higher quality (quick_test.yaml uses 32)
+    alpha: 128            # Stronger adaptation (quick_test.yaml uses 64)
 
-# Production settings
-MAX_STEPS=0               # Train for full epochs
-DATASET_MAX_SAMPLES=0     # Use entire dataset
-LORA_RANK=64              # Higher quality adapters
-LORA_ALPHA=128            # Stronger adaptation
-SAVE_ONLY_FINAL=false     # Save checkpoints during training
+  batch:
+    size: 4               # Increase if VRAM allows
+    gradient_accumulation_steps: 2
+
+  optimization:
+    learning_rate: 3e-4   # Standard for LoRA
+
+  epochs:
+    num_train_epochs: 3   # Full epochs (quick_test.yaml uses 1)
+    max_steps: 0          # 0 = use epochs
+    dataset_max_samples: 0  # Use entire dataset (quick_test.yaml uses 100)
+
+  data:
+    max_seq_length: 2048  # Adjust based on your dataset
+    packing: false
+
+logging:
+  save_only_final: false  # Save checkpoints during training (safer for long runs)
+
+output:
+  formats:
+    - gguf_f16            # Multiple quantizations for different use cases
+    - gguf_q8_0
+    - gguf_q4_k_m
 ```
 
 Then run:
@@ -600,41 +627,71 @@ LORA_BASE_MODEL=unsloth/Llama-3.1-8B-Instruct-bnb-4bit
 
 ## 🔧 Configuration Highlights
 
-Key settings in `.env`:
+### Training Configuration (training_params.yaml)
+
+```yaml
+training:
+  lora:
+    rank: 64              # LoRA rank: 8 (fast), 16, 32, 64 (balanced), 128 (high quality)
+    alpha: 128            # Scaling factor (typically 2x rank)
+    dropout: 0.0          # Regularization (0.0 = none)
+
+  batch:
+    size: 4               # Per-device batch size (reduce if OOM)
+    gradient_accumulation_steps: 2  # Effective batch = 4 × 2 = 8
+
+  optimization:
+    learning_rate: 3e-4   # Learning rate
+    optimizer: adamw_8bit # Memory-efficient optimizer
+
+  epochs:
+    num_train_epochs: 3   # Number of epochs
+    max_steps: 0          # 0 = use epochs, >0 = stop after N steps
+    dataset_max_samples: 0  # 0 = use all, >0 = limit for testing
+
+  data:
+    max_seq_length: 2048  # Maximum sequence length
+    packing: false        # Pack multiple sequences (faster but changes loss)
+
+logging:
+  logging_steps: 5
+  save_only_final: true   # Skip intermediate checkpoints
+
+output:
+  formats:                # Output formats to generate
+    - gguf_f16            # 16-bit GGUF (best quality)
+    - gguf_q8_0           # 8-bit quantization
+    - gguf_q4_k_m         # 4-bit quantization (good balance)
+```
+
+**Quick Test Config** (`quick_test.yaml`):
+```bash
+python scripts/train.py --config quick_test.yaml  # Faster: rank=32, 1 epoch, 100 samples
+```
+
+### Model & Credentials (.env)
 
 ```bash
 # Model Selection (choose based on VRAM)
 LORA_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct-bnb-4bit  # 4-6GB VRAM
 # Other options: Llama-3.2-3B, Phi-3.5, Qwen2.5-1.5B, etc.
 
-# Optional: Use unquantized base for merging (better quality, more VRAM during build)
+# Optional: Use unquantized base for merging (better quality)
 INFERENCE_BASE_MODEL=  # Empty = use LORA_BASE_MODEL (4-bit)
-# INFERENCE_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct  # Unquantized (requires 15-20GB VRAM for build)
-
-# Output name for directories and files
-OUTPUT_MODEL_NAME=auto  # Auto = model + dataset name
-# OUTPUT_MODEL_NAME=my-chatbot-v1  # Custom name for better organization
+# INFERENCE_BASE_MODEL=unsloth/Llama-3.2-1B-Instruct  # 16-bit unquantized
 
 # Dataset
-DATASET_NAME=your-dataset/name  # Any HuggingFace dataset
+DATASET_NAME=GAIR/lima  # Any HuggingFace dataset
 
-# Training (Quick Test)
-MAX_STEPS=50              # Train for 50 steps only
-DATASET_MAX_SAMPLES=100   # Use 100 samples only
+# Output naming
+OUTPUT_MODEL_NAME=auto  # Auto = {model}-{dataset}
 
-# Training (Full)
-MAX_STEPS=0               # Train for full epochs
-DATASET_MAX_SAMPLES=0     # Use all samples
-
-# Output Formats
-OUTPUT_FORMATS=gguf_q4_k_m,gguf_q5_k_m  # Create Q4_K_M and Q5_K_M GGUF
+# HuggingFace credentials (optional - for pushing to Hub)
+HF_TOKEN=your-token-here  # Get from https://huggingface.co/settings/tokens
+HF_USERNAME=your-username
 
 # Author Attribution
-AUTHOR_NAME=Your Name      # Your name for model cards and citations
-
-# Performance
-CHECK_SEQ_LENGTH=false    # Skip length checking (faster preprocessing)
-FORCE_PREPROCESS=false    # Use cached dataset if available
+AUTHOR_NAME=Your Name  # For model cards and citations
 ```
 
 See [Configuration Guide](docs/CONFIGURATION.md) for all options.
@@ -674,10 +731,11 @@ outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/  # Auto-generated: {model}-{dataset
 **Problem:** GPU runs out of VRAM during training
 
 **Solutions:**
-1. Reduce `MAX_SEQ_LENGTH` from 4096 to 1024 or 2048 in `.env`
-2. Reduce `BATCH_SIZE` from 2 to 1
-3. Increase `GRADIENT_ACCUMULATION_STEPS` to maintain effective batch size
-4. Use a smaller model (e.g., 1.7B instead of 4B)
+1. Reduce `training.data.max_seq_length` from 4096 to 2048 or 1024 in `training_params.yaml`
+2. Reduce `training.batch.size` from 4 to 2 or 1
+3. Increase `training.batch.gradient_accumulation_steps` to maintain effective batch size
+4. Enable `training.optimization.use_gradient_checkpointing: true` (saves VRAM)
+5. Use a smaller model (e.g., 1B instead of 3B) in `.env`
 
 ### "Model not found" Error
 
@@ -693,10 +751,11 @@ outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/  # Auto-generated: {model}-{dataset
 **Problem:** Training takes too long
 
 **Solutions:**
-1. Set `CHECK_SEQ_LENGTH=false` in `.env` (skip length checking)
-2. Reduce `DATASET_MAX_SAMPLES` for testing
-3. Increase `MAX_STEPS` to limit training duration
-4. Ensure you're using a 4-bit quantized model (`-bnb-4bit`)
+1. Use `quick_test.yaml` config for rapid testing: `python scripts/train.py --config quick_test.yaml`
+2. Set `training.epochs.dataset_max_samples: 100` in your config (test on subset)
+3. Set `training.epochs.max_steps: 50` to limit training duration
+4. Set `CHECK_SEQ_LENGTH=false` in `.env` (skip length checking during preprocessing)
+5. Ensure you're using a 4-bit quantized model (`-bnb-4bit`) in `.env`
 
 ### "Flash Attention failed" Warning
 
@@ -705,6 +764,17 @@ outputs/Qwen3-VL-2B-Instruct-alpaca-cleaned/  # Auto-generated: {model}-{dataset
 **Solution:** The pipeline will automatically fall back to xformers, which provides stable performance with approximately 10% slower training speed.
 
 For more troubleshooting, see [docs/FAQ.md](docs/FAQ.md) and [docs/TRAINING.md](docs/TRAINING.md).
+
+## 🔮 Future Enhancements
+
+Planned improvements to make the pipeline even better:
+
+- ✅ **YAML Configuration** - DONE! Training params now in shareable YAML files (`training_params.yaml`, `quick_test.yaml`)
+- **Multi-GPU Support** - Distributed training across multiple GPUs for faster training on large datasets
+- **Experiment Tracking** - Enhanced integration with Weights & Biases or MLflow for better training monitoring
+- **Automated Hyperparameter Search** - Grid search or Bayesian optimization to automatically find the best hyperparameters
+
+Suggestions and contributions are welcome! Feel free to open an issue or discussion.
 
 ## 🤝 Contributing
 

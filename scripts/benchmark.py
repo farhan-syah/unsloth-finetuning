@@ -85,6 +85,16 @@ os.environ["PYTHONWARNINGS"] = "ignore"
 # Load environment variables
 load_dotenv(override=True)
 
+# Load configuration from YAML
+try:
+    from config_loader import load_config, load_env_config
+    config = load_config()
+    env_config = load_env_config()
+except Exception:
+    # Fallback if config loading fails (benchmark can run without training config)
+    config = None
+    env_config = {}
+
 # Check if lm_eval is installed
 def check_lm_eval_installed():
     """Check if lm-evaluation-harness is installed"""
@@ -137,14 +147,14 @@ def parse_timeout(timeout_str):
     else:
         raise ValueError(f"Unknown time unit: {unit}")
 
-# Configuration from .env (defaults only, user can override interactively)
-OUTPUT_DIR_BASE = os.getenv("OUTPUT_DIR_BASE", "./outputs")
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-BENCHMARK_BATCH_SIZE = get_int_env("BENCHMARK_BATCH_SIZE", 8)
-BENCHMARK_MAX_TOKENS = get_int_env("BENCHMARK_MAX_TOKENS", 640)  # Lower default to prevent repetition
-BENCHMARK_DEFAULT_BACKEND = os.getenv("BENCHMARK_DEFAULT_BACKEND", "ollama")
-BENCHMARK_DEFAULT_TASKS = os.getenv("BENCHMARK_DEFAULT_TASKS", "ifeval,gsm8k,hellaswag,mmlu")
-INFERENCE_BASE_MODEL = os.getenv("INFERENCE_BASE_MODEL", "")  # 16-bit base model for benchmarking
+# Configuration (from YAML config or .env fallback)
+OUTPUT_DIR_BASE = env_config.get('output_dir_base', os.getenv("OUTPUT_DIR_BASE", "./outputs"))
+OLLAMA_BASE_URL = env_config.get('ollama_base_url', os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+BENCHMARK_BATCH_SIZE = config.benchmark.batch_size if config else get_int_env("BENCHMARK_BATCH_SIZE", 8)
+BENCHMARK_MAX_TOKENS = config.benchmark.max_tokens if config else get_int_env("BENCHMARK_MAX_TOKENS", 640)
+BENCHMARK_DEFAULT_BACKEND = config.benchmark.default_backend if config else os.getenv("BENCHMARK_DEFAULT_BACKEND", "ollama")
+BENCHMARK_DEFAULT_TASKS = ",".join(config.benchmark.default_tasks) if config else os.getenv("BENCHMARK_DEFAULT_TASKS", "ifeval,gsm8k,hellaswag,mmlu")
+INFERENCE_BASE_MODEL = env_config.get('inference_base_model', os.getenv("INFERENCE_BASE_MODEL", ""))
 
 # Expected baselines from research (for comparison and forgetting detection)
 EXPECTED_BASELINES = {
