@@ -56,19 +56,25 @@ No need to manually install PyTorch, CUDA versions, or dependencies - it's all a
 ### 2. **Simple Configuration**
 Training parameters in YAML, credentials in `.env`:
 ```bash
-# Set up credentials and paths
+# First-time setup
+bash setup.sh  # Creates training_params.yaml from template
+
+# Set up credentials (legacy, optional)
 cp .env.example .env
 vim .env  # Set HF_TOKEN, HF_USERNAME, AUTHOR_NAME
 
-# Configure training (or use defaults)
-vim training_params.yaml  # Optional: customize model, dataset, training settings
+# Configure training
+vim training_params.yaml  # Customize model, dataset, training settings
 
-# Run with default config
+# Run with your config
 python scripts/train.py
 
 # Or use quick test config
 python scripts/train.py --config quick_test.yaml
 ```
+
+**Note:** `training_params.yaml` is gitignored and won't be committed. The setup script automatically creates it from `training_params_example.yaml` template.
+
 No Python coding required - just edit YAML/text configuration.
 
 ### 3. **Automatic Format Conversion**

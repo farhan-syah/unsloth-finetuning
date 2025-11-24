@@ -86,6 +86,9 @@ tmp/
 temp/
 *.tmp
 
+# User Configuration (keep local, don't commit)
+training_params.yaml
+
 # Research & Experiments
 research/
 experiments/

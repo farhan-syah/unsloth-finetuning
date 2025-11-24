@@ -281,6 +281,7 @@ echo "⚙️  Step 3: Configuration"
 echo "============================================================"
 echo ""
 
+# Legacy .env configuration (deprecated but still supported)
 if [ ! -f ".env" ]; then
     echo "No .env file found. Creating from example..."
 
@@ -290,12 +291,7 @@ if [ ! -f ".env" ]; then
         echo ""
         echo "📝 .env is pre-configured for quick testing (100 samples, 50 steps)"
         echo ""
-        echo "For production training, edit .env and adjust:"
-        echo "   • MAX_STEPS=0 (train for full epochs)"
-        echo "   • DATASET_MAX_SAMPLES=0 (use all samples)"
-        echo "   • LORA_RANK=64 (better quality)"
-        echo ""
-        echo "See detailed explanations in .env for all parameters"
+        echo "⚠️  Note: .env is deprecated. Please use training_params.yaml instead"
         echo ""
         read -p "Press Enter to continue..."
     else
@@ -304,6 +300,41 @@ if [ ! -f ".env" ]; then
     fi
 else
     echo "✅ .env already exists"
+fi
+
+echo ""
+
+# YAML configuration (recommended)
+if [ ! -f "training_params.yaml" ]; then
+    echo "No training_params.yaml found. Creating from template..."
+
+    if [ -f "training_params_example.yaml" ]; then
+        cp training_params_example.yaml training_params.yaml
+        echo "✅ Created training_params.yaml from training_params_example.yaml"
+        echo ""
+        echo "📝 training_params.yaml contains all training configuration:"
+        echo "   • Model selection (base model, output formats)"
+        echo "   • Dataset configuration (name, config, max_samples)"
+        echo "   • Training hyperparameters (LoRA, batch size, learning rate)"
+        echo "   • Logging and checkpoint settings"
+        echo "   • Benchmark configuration"
+        echo ""
+        echo "Default configuration:"
+        echo "   • Model: Llama-3.2-1B-Instruct (4-bit quantized)"
+        echo "   • Dataset: openai/gsm8k (main config)"
+        echo "   • LoRA rank: 64, alpha: 128"
+        echo "   • Batch size: 4, gradient accumulation: 2"
+        echo "   • Learning rate: 3e-4, 3 epochs"
+        echo ""
+        echo "Edit training_params.yaml to customize your training setup"
+        echo ""
+        read -p "Press Enter to continue..."
+    else
+        echo "⚠️  training_params_example.yaml not found"
+        echo "   You'll need to create training_params.yaml manually"
+    fi
+else
+    echo "✅ training_params.yaml already exists"
 fi
 
 # ============================================================
@@ -372,7 +403,8 @@ echo ""
 echo "🚀 Next steps:"
 echo ""
 echo "1. Configure your training:"
-echo "   vim .env"
+echo "   vim training_params.yaml"
+echo "   (or edit .env for legacy configuration)"
 echo ""
 echo "2. (Optional) Test your setup:"
 echo "   python test_setup.py"

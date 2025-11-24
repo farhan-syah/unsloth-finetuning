@@ -50,6 +50,7 @@ def get_template_for_model(model_name):
 # Model and dataset from YAML config
 LORA_BASE_MODEL = config.model.base_model
 DATASET_NAME = config.dataset.name
+DATASET_CONFIG = config.dataset.config  # Optional config/subset name
 OUTPUT_MODEL_NAME = config.model.output_name
 
 # Training parameters from YAML config
@@ -323,12 +324,12 @@ if not preprocess_exists:
     # Load all splits
     try:
         # First try standard loading
-        splits = get_dataset_split_names(DATASET_NAME)
+        splits = get_dataset_split_names(DATASET_NAME, config_name=DATASET_CONFIG)
         print(f"   Found {len(splits)} splits: {splits}")
 
         all_datasets = []
         for split_name in splits:
-            split_data = load_dataset(DATASET_NAME, split=split_name)
+            split_data = load_dataset(DATASET_NAME, name=DATASET_CONFIG, split=split_name)
             all_datasets.append(split_data)
             print(f"   Loaded {split_name}: {len(split_data)} samples")
 

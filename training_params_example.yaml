@@ -1,11 +1,19 @@
 # =============================================================================
-# Training Configuration
+# Training Configuration Template
 # =============================================================================
+# IMPORTANT: This is a template file. DO NOT edit directly!
+#
+# To get started:
+#   1. Copy this file: cp training_params_example.yaml training_params.yaml
+#   2. Edit training_params.yaml with your custom settings
+#   3. training_params.yaml is gitignored and won't be committed
+#
 # This file contains all training hyperparameters for fine-tuning.
 # Copy this file to your lora/ output directory for reproducibility.
 #
 # Quick start profiles:
-#   - training_params.yaml (this file) - Default production settings
+#   - training_params.yaml - Your customized settings (gitignored)
+#   - training_params_example.yaml - Template with defaults (version controlled)
 #   - quick_test.yaml - Fast testing with minimal resources
 # =============================================================================
 
@@ -41,7 +49,15 @@ dataset:
   #   - GAIR/lima (1K curated, best quality, requires HF login)
   #   - yahma/alpaca-cleaned (52K instruction, ungated)
   #   - databricks/databricks-dolly-15k (15K human-written, ungated)
-  name: GAIR/lima
+  #   - openai/gsm8k (requires config: 'main' or 'socratic')
+  name: yahma/alpaca-cleaned
+
+  # Dataset configuration/subset name (optional, required for some datasets)
+  # Leave as null for most datasets
+  # Examples that REQUIRE config:
+  #   - openai/gsm8k: use 'main' or 'socratic'
+  #   - allenai/c4: use 'en', 'en.noblocklist', etc.
+  config: null
 
   # Limit dataset to N samples for testing
   # 0 = use full dataset

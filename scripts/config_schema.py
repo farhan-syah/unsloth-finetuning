@@ -40,6 +40,10 @@ class DatasetConfig(BaseModel):
         default="GAIR/lima",
         description="HuggingFace dataset name or path."
     )
+    config: Optional[str] = Field(
+        default=None,
+        description="Dataset configuration/subset name. Required for some datasets like openai/gsm8k."
+    )
     max_samples: int = Field(
         default=0,
         ge=0,
